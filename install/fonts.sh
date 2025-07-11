@@ -1,7 +1,11 @@
 # Original: yay -Sy --noconfirm --needed ttf-font-awesome noto-fonts noto-fonts-emoji noto-fonts-cjk noto-fonts-extra
 # Modified: Removed noto-fonts-cjk (CJK language support) and noto-fonts-extra (additional variants)
 # Added: ttf-liberation (includes Hebrew support and better compatibility)
-yay -Sy --noconfirm --needed ttf-font-awesome noto-fonts noto-fonts-emoji ttf-liberation # noto-fonts-cjk noto-fonts-extra
+if [ -z "$OMARCHY_BARE" ]; then
+  yay -Sy --noconfirm --needed ttf-font-awesome noto-fonts noto-fonts-emoji ttf-liberation # noto-fonts-cjk noto-fonts-extra
+else
+  yay -Sy --noconfirm --needed ttf-font-awesome noto-fonts noto-fonts-emoji
+fi
 
 mkdir -p ~/.local/share/fonts
 
@@ -13,6 +17,10 @@ if ! fc-list | grep -qi "CaskaydiaMono Nerd Font"; then
   cp CascadiaFont/CaskaydiaMonoNerdFont-Bold.ttf ~/.local/share/fonts
   cp CascadiaFont/CaskaydiaMonoNerdFont-Italic.ttf ~/.local/share/fonts
   cp CascadiaFont/CaskaydiaMonoNerdFont-BoldItalic.ttf ~/.local/share/fonts
+  cp CascadiaFont/CaskaydiaMonoNerdFontPropo-Regular.ttf ~/.local/share/fonts
+  cp CascadiaFont/CaskaydiaMonoNerdFontPropo-Bold.ttf ~/.local/share/fonts
+  cp CascadiaFont/CaskaydiaMonoNerdFontPropo-Italic.ttf ~/.local/share/fonts
+  cp CascadiaFont/CaskaydiaMonoNerdFontPropo-BoldItalic.ttf ~/.local/share/fonts
   rm -rf CascadiaMono.zip CascadiaFont
   fc-cache
   cd -

@@ -10,5 +10,5 @@
 #   echo "vim.opt.relativenumber = false" >>~/.config/nvim/lua/config/options.lua
 # fi
 
-# Install nano and vi (not included in Arch Linux base packages)
-yay -S --noconfirm --needed nano vi
+# nano and vi are already included in Arch Linux base packages
+# No additional packages needed

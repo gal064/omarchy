@@ -1,13 +1,13 @@
 if [ -z "$OMARCHY_BARE" ]; then
   yay -S --noconfirm --needed \
     gnome-calculator \
-    # signal-desktop \
+    # signal-desktop
     spotify \
-    # dropbox-cli \
-    # zoom \
-    # obsidian-bin \
+    # dropbox-cli
+    # zoom
+    # obsidian-bin
     typora libreoffice obs-studio kdenlive \
-    # 1password-beta 1password-cli gnome-keyring \
+    # 1password-beta 1password-cli gnome-keyring
     pinta xournalpp localsend-bin
 fi
 

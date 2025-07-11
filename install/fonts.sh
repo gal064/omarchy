@@ -1,4 +1,7 @@
-yay -Sy --noconfirm --needed ttf-font-awesome noto-fonts noto-fonts-emoji noto-fonts-cjk noto-fonts-extra
+# Original: yay -Sy --noconfirm --needed ttf-font-awesome noto-fonts noto-fonts-emoji noto-fonts-cjk noto-fonts-extra
+# Modified: Removed noto-fonts-cjk (CJK language support) and noto-fonts-extra (additional variants)
+# Added: ttf-liberation (includes Hebrew support and better compatibility)
+yay -Sy --noconfirm --needed ttf-font-awesome noto-fonts noto-fonts-emoji ttf-liberation # noto-fonts-cjk noto-fonts-extra
 
 mkdir -p ~/.local/share/fonts
 

@@ -8,7 +8,8 @@
   <property name="selectedToolbar" value="Portrait"/>
   <property name="lastSavePath" value="/home/dhh/Downloads"/>
   <property name="lastOpenPath" value=""/>
-  <property name="lastImagePath" value="/home/dhh/Dropbox/Images"/>
+  <!-- Original: <property name="lastImagePath" value="/home/dhh/Dropbox/Images"/> -->
+  <property name="lastImagePath" value="/home/dhh/Pictures"/>
   <property name="edgePanSpeed" value="20"/>
   <property name="edgePanMaxMult" value="5"/>
   <property name="zoomStep" value="10"/>

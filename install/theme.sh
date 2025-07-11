@@ -20,7 +20,8 @@ ln -snf ~/.config/omarchy/current/backgrounds/1-Pawel-Czerwinski-Abstract-Purple
 # Set specific app links for current theme
 ln -snf ~/.config/omarchy/current/theme/hyprlock.conf ~/.config/hypr/hyprlock.conf
 ln -snf ~/.config/omarchy/current/theme/wofi.css ~/.config/wofi/style.css
-ln -snf ~/.config/omarchy/current/theme/neovim.lua ~/.config/nvim/lua/plugins/theme.lua
+# Original: ln -snf ~/.config/omarchy/current/theme/neovim.lua ~/.config/nvim/lua/plugins/theme.lua (nvim removed)
+# ln -snf ~/.config/omarchy/current/theme/neovim.lua ~/.config/nvim/lua/plugins/theme.lua
 mkdir -p ~/.config/btop/themes
 ln -snf ~/.config/omarchy/current/theme/btop.theme ~/.config/btop/themes/current.theme
 mkdir -p ~/.config/mako

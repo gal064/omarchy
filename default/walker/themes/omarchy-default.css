@@ -22,7 +22,7 @@ slider,
 }
 
 * {
-  font-family: 'CaskaydiaMono Nerd Font', monospace;
+  font-family: monospace;
   font-size: 18px;
 }
 
@@ -97,6 +97,10 @@ child:hover {
 /* Item layout */
 #item {
   padding: 0;
+}
+
+#item.active {
+  font-style: italic;
 }
 
 /* Icon */

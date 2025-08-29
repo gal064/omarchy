@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
 """
-Post-install customization script for Omarchy (CORRECTED VERSION)
+Post-install customization script for Omarchy (SIMPLIFIED VERSION)
 This script removes unwanted applications and their configurations
 and switches from Chromium to Google Chrome.
 
-IMPORTANT: This version follows Omarchy best practices by ONLY modifying
-user configs in ~/.config/ and ~/.local/share/applications/ instead of
-internal files in ~/.local/share/omarchy/, preserving upgrade compatibility.
+IMPORTANT: This version leverages Omarchy's browser abstraction layer
+(omarchy-launch-browser/omarchy-launch-webapp) and follows best practices
+by ONLY modifying user configs, preserving upgrade compatibility.
 """
 
 import os
@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import json
 from pathlib import Path
 
 # Configuration variables
@@ -101,6 +102,17 @@ def add_fenced_content_to_file(
         return False
 
 
+def parse_jsonc_to_json(jsonc_text):
+    """Best-effort conversion of JSONC (comments, trailing commas) to valid JSON string"""
+    # Remove block comments
+    without_block = re.sub(r"/\*[\s\S]*?\*/", "", jsonc_text)
+    # Remove line comments (naive, may affect comment-like content in strings)
+    without_line = re.sub(r"(?m)//.*$", "", without_block)
+    # Remove trailing commas before } or ]
+    without_trailing_commas = re.sub(r",\s*([}\]])", r"\1", without_line)
+    return without_trailing_commas
+
+
 def remove_packages_individually(packages, action_description="packages"):
     """Remove packages individually so failure of one doesn't prevent removal of others"""
     print(f"Removing {action_description}...")
@@ -184,11 +196,12 @@ def remove_packages():
             "cargo",
             "clang",
             "llvm",
-            "llvm-libs",
+            # intentionally skip core runtime libs that are depended upon system-wide
+            # "llvm-libs",
             "mise",
             "ruby",
-            "gcc",
-            "gcc-libs",
+            # "gcc",
+            # "gcc-libs",
             "gcc14",
             "wl-clip-persist",
         ],
@@ -368,40 +381,6 @@ def manage_user_desktop_files():
             print(f"✓ Removed {filename}")
 
 
-def create_chrome_desktop_file(user_apps_dir):
-    """Create a custom Chrome desktop file with Wayland optimization"""
-    print("Creating custom Chrome desktop file...")
-
-    chrome_desktop_content = """[Desktop Entry]
-Version=1.0
-Name=Google Chrome
-GenericName=Web Browser
-Comment=Access the Internet
-Exec=/usr/bin/google-chrome-stable --enable-features=UseOzonePlatform --ozone-platform=wayland %U
-StartupNotify=true
-Terminal=false
-Icon=google-chrome
-Type=Application
-Categories=Network;WebBrowser;
-MimeType=application/pdf;application/rdf+xml;application/rss+xml;application/xhtml+xml;application/xhtml_xml;application/xml;image/gif;image/jpeg;image/png;image/webp;text/html;text/xml;x-scheme-handler/http;x-scheme-handler/https;
-Actions=new-window;new-private-window;
-
-[Desktop Action new-window]
-Name=New Window
-Exec=/usr/bin/google-chrome-stable --enable-features=UseOzonePlatform --ozone-platform=wayland --new-window
-
-[Desktop Action new-private-window]
-Name=New Incognito Window
-Exec=/usr/bin/google-chrome-stable --enable-features=UseOzonePlatform --ozone-platform=wayland --new-window --incognito
-"""
-
-    chrome_desktop_path = user_apps_dir / "google-chrome.desktop"
-
-    try:
-        chrome_desktop_path.write_text(chrome_desktop_content)
-        print("✓ Created custom google-chrome.desktop with Wayland optimization")
-    except Exception as e:
-        print(f"! Failed to create Chrome desktop file: {e}")
 
 
 def create_audio_screenrecord_script():
@@ -451,8 +430,10 @@ fi"""
         script_path.write_text(script_content)
         script_path.chmod(0o755)  # Make executable
         print("✓ Created audio screen recording script")
+        return True
     except Exception as e:
         print(f"! Failed to create audio screen recording script: {e}")
+        return False
 
 
 def create_nautilus_vscode_script():
@@ -519,7 +500,7 @@ disown
 
 
 def remove_webapps_from_user_space():
-    """Remove web app shortcuts from user applications directory using web2app-remove"""
+    """Remove web app shortcuts using repo helper"""
     print("Removing web app shortcuts from user directory...")
 
     webapps_to_remove = [
@@ -530,7 +511,7 @@ def remove_webapps_from_user_space():
     ]
 
     for webapp_name in webapps_to_remove:
-        success = run_command(f"web2app-remove {webapp_name}")
+        success = run_command(f"~/.local/share/omarchy/bin/omarchy-webapp-remove '{webapp_name}'")
         if success:
             print(f"✓ Removed {webapp_name}")
         else:
@@ -559,8 +540,11 @@ def create_webapps():
         },
     ]
 
+    # Use repo helper which integrates with this setup
     for app in webapps:
-        success = run_command(f'web2app "{app["name"]}" "{app["url"]}" "{app["icon"]}"')
+        success = run_command(
+            f'~/.local/share/omarchy/bin/omarchy-webapp-install "{app["name"]}" "{app["url"]}" "{app["icon"]}"'
+        )
         if success:
             print(f"✓ Created {app['name']} web app")
         else:
@@ -582,10 +566,14 @@ def customize_bash_config():
         'export EDITOR="nano"',
         'export SUDO_EDITOR="$EDITOR"',
         "alias e='nano'",
-        "alias chromium='google-chrome'",
-        # Add macOS-style prompt with current directory and git branch
-        "parse_git_branch() { git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \\(.*\\)/ (\\1)/'; }",
-        'export PS1="\\[\\033[34m\\]\\w\\[\\033[33m\\]\\$(parse_git_branch)\\[\\033[00m\\]\\$ "',
+        # Add code function for cursor with Alacritty auto-close
+        "code() {",
+        "    cursor \"$@\" &",
+        "    if [[ \"$(ps -o comm= -p $PPID 2>/dev/null)\" == \"alacritty\" ]]; then",
+        "        sleep 0.5",
+        "        kill $PPID 2>/dev/null",
+        "    fi",
+        "}",
         "bind 'set show-all-if-ambiguous on'",
         "bind 'TAB:menu-complete'",
         # Enable bash-completion
@@ -603,6 +591,7 @@ def customize_bash_config():
         print("✓ Bash customizations added with fencing")
     else:
         print("! Failed to add bash customizations")
+    return success
 
 
 def update_user_hypridle_config():
@@ -635,6 +624,7 @@ def update_user_hypridle_config():
         print("✓ Hypridle customizations added with fencing")
     else:
         print("! Failed to add hypridle customizations")
+    return success
 
 
 def update_user_hyprland_config():
@@ -642,100 +632,126 @@ def update_user_hyprland_config():
     print("Updating user hyprland configuration...")
 
     home = Path.home()
-    hyprland_conf = home / ".config/hypr/hyprland.conf"
+    hypr_dir = home / ".config/hypr"
+    
+    # Check if hyprland config directory exists
+    if not hypr_dir.exists():
+        print("! ~/.config/hypr/ directory not found, skipping")
+        return False
 
-    if not hyprland_conf.exists():
-        print("! ~/.config/hypr/hyprland.conf not found, skipping")
-        return
-
-    # Create backup before editing
-    backup_file_before_edit(hyprland_conf)
-
-    customizations = [
-        "unbind = SUPER, O",
-        "unbind = SUPER, G",
-        "unbind = SUPER, slash",
-        "unbind = SUPER, N",
-        "unbind = SUPER, X",
-        "unbind = SUPER SHIFT, X",
-        "unbind = SUPER, C",
-        "unbind = SUPER, E",
-        "unbind = CTRL, F1",
-        "unbind = CTRL, F2",
-        "unbind = SHIFT CTRL, F2",
-        'env = CHROME_FLAGS,"--enable-features=UseOzonePlatform --ozone-platform=wayland --gtk-version=4"',
-        "exec-once = clipse -listen",
+    # Define configurations for each file
+    config_files = {
+        "bindings.conf": [
+            "unbind = SUPER, O",
+            "unbind = SUPER, G", 
+            "unbind = SUPER, slash",
+            "unbind = SUPER, N",
+            "unbind = SUPER, X",
+            "unbind = SUPER SHIFT, X",
+            "unbind = SUPER, C",
+            "unbind = SUPER, E",
+            "unbind = CTRL, F1",
+            "unbind = CTRL, F2",
+            "unbind = SHIFT CTRL, F2",
+            "unbind = SUPER, P",
+            "bind = SUPER, P, exec, joplin-desktop",
+            "unbind = SUPER, V",
+            f"bind = CTRL SHIFT, C, exec, {TERMINAL} --class clipse -e clipse && hyprctl dispatch sendshortcut 'CTRL,V,'",
+            "bind = SUPER, E, fullscreen, 1",
+            "unbind = SUPER SHIFT, A",
+            'bind = SUPER SHIFT, A, exec, $webapp="https://aistudio.google.com/"',
+            "bind = CTRL SHIFT, 4, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenshot",
+            "bind = CTRL SHIFT, 3, exec, ~/.local/bin/omarchy-cmd-screenrecord-audio",
+            "bind = SUPER SHIFT, E, resizeactive, 67% 0",
+        ],
+        "envs.conf": [
+            'env = CHROME_FLAGS,"--enable-features=UseOzonePlatform --ozone-platform=wayland --gtk-version=4"',
+        ],
+        "autostart.conf": [
+            "exec-once = clipse -listen",
+        ],
+        "input.conf": [
+            "input { \n  kb_layout = us,il \n  kb_options = grp:caps_toggle \n  }",
+        ],
+    }
+    
+    # Window rules and misc settings go to main hyprland.conf
+    hyprland_conf = hypr_dir / "hyprland.conf"
+    main_config = [
         "windowrule = float, class:(clipse)",
         "windowrule = size 622 652, class:(clipse)",
         "windowrule = stayfocused, class:(clipse)",
-        "unbind = SUPER, P",
-        "bind = SUPER, P, exec, joplin-desktop",
-        "unbind = SUPER, V",
-        f"bind = CTRL SHIFT, C, exec, {TERMINAL} --class clipse -e clipse && hyprctl dispatch sendshortcut 'CTRL,V,'",
-        "bind = SUPER, E, fullscreen, 1",
-        "unbind = SUPER SHIFT, A",
-        'bind = SUPER SHIFT, A, exec, $webapp="https://aistudio.google.com/"',
-        "bind = CTRL SHIFT, 4, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenshot",
-        "bind = CTRL SHIFT, 3, exec, ~/.local/bin/omarchy-cmd-screenrecord-audio",
-        "bind = SUPER SHIFT, E, resizeactive, 67% 0",
         "windowrule = opacity 1 1, class:.*",
-        "input { \n  kb_layout = us,il \n  kb_options = grp:caps_toggle \n  }",
         "misc { \n  new_window_takes_over_fullscreen = 2 \n }\n",
     ]
 
-    # Use fenced content addition
-    success = add_fenced_content_to_file(
-        hyprland_conf, customizations, "HYPRLAND CUSTOMIZATIONS"
-    )
+    all_success = True
 
-    if success:
-        print("✓ Hyprland customizations added with fencing")
+    # Update specific config files
+    for config_file, customizations in config_files.items():
+        config_path = hypr_dir / config_file
+        
+        # Create backup if file exists
+        if config_path.exists():
+            backup_file_before_edit(config_path)
+        
+        # Add customizations to file
+        success = add_fenced_content_to_file(
+            config_path, customizations, f"OMARCHY {config_file.upper()} CUSTOMIZATIONS"
+        )
+        
+        if success:
+            print(f"✓ {config_file} customizations added")
+        else:
+            print(f"! Failed to add {config_file} customizations")
+            all_success = False
+
+    # Update main hyprland.conf with window rules and misc settings
+    if hyprland_conf.exists():
+        backup_file_before_edit(hyprland_conf)
+        
+        success = add_fenced_content_to_file(
+            hyprland_conf, main_config, "OMARCHY HYPRLAND CUSTOMIZATIONS"
+        )
+        
+        if success:
+            print("✓ Main hyprland.conf customizations added")
+        else:
+            print("! Failed to add main hyprland.conf customizations")
+            all_success = False
     else:
-        print("! Failed to add hyprland customizations")
+        print("! ~/.config/hypr/hyprland.conf not found, skipping main config")
+        all_success = False
+
+    return all_success
 
 
-def create_chromium_symlink():
-    """Create a symlink so 'chromium' command launches Google Chrome"""
-    print("Creating chromium symlink to Google Chrome...")
-
-    # Check if Google Chrome is installed
-    if not shutil.which("google-chrome-stable"):
-        print("! Google Chrome not found, skipping symlink creation")
-        return
-
-    # Remove any existing chromium binary or symlink first
-    run_command("sudo rm -f /usr/local/bin/chromium")
-
-    # Create the symlink
-    success = run_command(
-        "sudo ln -sf /usr/bin/google-chrome-stable /usr/local/bin/chromium"
-    )
-    if success:
-        print("✓ Created chromium -> google-chrome-stable symlink")
-    else:
-        print("! Failed to create chromium symlink")
 
 
 def set_default_browser():
-    """Set chromium.desktop (which launches Google Chrome) as the default browser"""
-    print("Setting chromium.desktop as default browser...")
+    """Set Google Chrome as the default browser"""
+    print("Setting google-chrome.desktop as default browser...")
 
     if not shutil.which("xdg-settings"):
         print("! xdg-settings not found, skipping default browser setup")
         return
 
     commands = [
-        "xdg-settings set default-web-browser chromium.desktop",
-        "xdg-mime default chromium.desktop x-scheme-handler/http",
-        "xdg-mime default chromium.desktop x-scheme-handler/https",
+        # Prefer setting Chrome directly
+        "xdg-settings set default-web-browser google-chrome.desktop",
+        "xdg-mime default google-chrome.desktop x-scheme-handler/http",
+        "xdg-mime default google-chrome.desktop x-scheme-handler/https",
     ]
 
+    all_ok = True
     for command in commands:
         success = run_command(command)
         if success:
             print(f"✓ {command}")
         else:
             print(f"! Failed: {command}")
+            all_ok = False
+    return all_ok
 
 
 def reset_git_config():
@@ -767,16 +783,24 @@ def update_desktop_database():
     success = run_command(f"update-desktop-database {user_apps}")
     if success:
         print("✓ Desktop database updated")
+        return True
     else:
         print("! Failed to update desktop database")
+        return False
 
 
 def customize_waybar():
-    """Configure Waybar to display current keyboard language/layout with backup and fencing"""
+    """Configure Waybar to display current keyboard language/layout with backup and fencing.
+
+    Supports Omarchy's default JSONC config at ~/.config/waybar/config.jsonc.
+    """
     print("Configuring Waybar language display...")
 
     home = Path.home()
-    waybar_config = home / ".config/waybar/config"
+    # Prefer JSONC file used by this repo; fallback to plain config if present
+    waybar_config_jsonc = home / ".config/waybar/config.jsonc"
+    waybar_config_plain = home / ".config/waybar/config"
+    waybar_config = waybar_config_jsonc if waybar_config_jsonc.exists() else waybar_config_plain
     waybar_style = home / ".config/waybar/style.css"
 
     if not waybar_config.exists():
@@ -784,16 +808,19 @@ def customize_waybar():
         return
 
     try:
-        import json
-
         # Create backups before editing
         backup_file_before_edit(waybar_config)
         if waybar_style.exists():
             backup_file_before_edit(waybar_style)
 
-        # Read and parse the Waybar configuration
+        # Read config; parse JSONC if necessary
         content = waybar_config.read_text()
-        config_data = json.loads(content)
+        if waybar_config.suffix == ".jsonc":
+            parsed = parse_jsonc_to_json(content)
+        else:
+            parsed = content
+
+        config_data = json.loads(parsed)
 
         # Check if hyprland/language module is already configured
         if "hyprland/language" in config_data:
@@ -820,10 +847,15 @@ def customize_waybar():
             }
             print("✓ Added hyprland/language module configuration")
 
-            # Write the updated configuration back with comment about the change
-            config_with_comment = f"// OMARCHY CUSTOMIZATION: Added hyprland/language module\n{json.dumps(config_data, indent=2)}"
-            waybar_config.write_text(config_with_comment)
-            print("✓ Updated Waybar configuration file with backup comment")
+            # Write the updated configuration back. Preserve .jsonc extension by
+            # writing JSON with a header comment if file is .jsonc
+            rendered_json = json.dumps(config_data, indent=2)
+            if waybar_config.suffix == ".jsonc":
+                config_with_comment = f"// OMARCHY CUSTOMIZATION: Added hyprland/language module\n{rendered_json}\n"
+                waybar_config.write_text(config_with_comment)
+            else:
+                waybar_config.write_text(rendered_json)
+            print("✓ Updated Waybar configuration file")
 
         # Add CSS styling for the language indicator using fencing
         if waybar_style.exists():
@@ -856,8 +888,11 @@ def customize_waybar():
 
     except json.JSONDecodeError as e:
         print(f"! Could not parse Waybar config as JSON: {e}")
+        return False
     except Exception as e:
         print(f"! Error configuring Waybar language display: {e}")
+        return False
+    return True
 
 
 def configure_toshy_keyboard_layout():
@@ -1200,8 +1235,6 @@ def main():
         remove_packages()
         print()
 
-        create_chromium_symlink()
-        print()
 
         manage_font_packages()
         print()
@@ -1219,16 +1252,11 @@ def main():
         manage_user_desktop_files()
         print()
 
-        # Create custom Chrome desktop file with Wayland optimization
-        home = Path.home()
-        user_apps = home / ".local/share/applications"
-        create_chrome_desktop_file(user_apps)
-        print()
 
         create_nautilus_vscode_script()
         print()
 
-        create_audio_screenrecord_script()
+        audio_script_ok = create_audio_screenrecord_script()
         print()
 
         remove_webapps_from_user_space()
@@ -1237,25 +1265,25 @@ def main():
         create_webapps()
         print()
 
-        customize_bash_config()
+        bash_ok = customize_bash_config()
         print()
 
-        update_user_hyprland_config()
+        hyprland_ok = update_user_hyprland_config()
         print()
 
-        update_user_hypridle_config()
-        print()
+        # update_user_hypridle_config()  # Commented out - user prefers original hypridle config
+        # print()
 
         reset_git_config()
         print()
 
-        set_default_browser()
+        default_browser_ok = set_default_browser()
         print()
 
-        update_desktop_database()
+        desktop_db_ok = update_desktop_database()
         print()
 
-        customize_waybar()
+        waybar_ok = customize_waybar()
         print()
 
         print("Restarting Waybar...")
@@ -1266,21 +1294,27 @@ def main():
 
         print("=" * 50)
         print("✓ Customization complete!")
-        print("✓ Removed neovim, dropbox, Zoom, Obsidian, Signal, 1Password, LocalSend")
+        print("✓ Removed dev/editor/misc apps where present (neovim, dropbox, Zoom, Obsidian, Signal, 1Password, LocalSend)")
         print("✓ Switched from Chromium to Google Chrome")
-        print("✓ Created chromium symlink - all apps calling 'chromium' now use Chrome")
         print("✓ Updated font packages (removed CJK/extra fonts, added Hebrew support)")
-        print(
-            "✓ Installed and configured keyd with Mac-style layout (Alt→Ctrl, Ctrl→Alt, Alt+←/→ for line navigation)"
-        )
-        print("✓ Set Chrome environment variables and window rules")
-        print("✓ Added chromium alias for terminal usage")
+        print("✓ keyd setup step executed (install or reuse existing configuration)")
+        if hyprland_ok:
+            print("✓ Set Chrome environment variables and window rules in Hyprland")
+        if bash_ok:
+            print("✓ Added Bash improvements and completion")
         print("✓ Disabled Apple display brightness controls")
         print("✓ Reset git configuration")
         print("✓ Installed Joplin and set Super+P keybinding")
         print("✓ Installed clipse clipboard manager and set Super+V keybinding")
-        print("✓ Configured Waybar language display for Hebrew/English layouts")
+        if waybar_ok:
+            print("✓ Configured Waybar language display for Hebrew/English layouts")
         print("✓ Created Nautilus script for opening files in VS Code/Cursor")
+        if default_browser_ok:
+            print("✓ Set default browser handlers to google-chrome.desktop")
+        if desktop_db_ok:
+            print("✓ Updated desktop database")
+        if audio_script_ok:
+            print("✓ Created audio screen recording helper")
         print("✓ All changes made to USER configuration files only")
         print("✓ Internal Omarchy files preserved for upgrade compatibility")
 

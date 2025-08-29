@@ -6,7 +6,7 @@
 6. DONE open cursor from file manager
 7.  DONE keyboard shortcut to toggle 2/3
 8.  when ghosty is available, do that text auto copied and ctrl v paste
-9.  bash autocomplete
+9.  DONE bash autocomplete
 10. DONE P0 make taking a screenshot with alt shift 4
 11. DONE P0 screen recording
 12. DONE fix the opacity (vs code, and other apps have opaccity)wqwww

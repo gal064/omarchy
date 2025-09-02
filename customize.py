@@ -659,7 +659,7 @@ def update_user_hyprland_config():
             f"bind = CTRL SHIFT, C, exec, {TERMINAL} --class clipse -e clipse && hyprctl dispatch sendshortcut 'CTRL,V,'",
             "bind = SUPER, E, fullscreen, 1",
             "unbind = SUPER SHIFT, A",
-            'bind = SUPER SHIFT, A, exec, $webapp="https://aistudio.google.com/"',
+            'bind = SUPER SHIFT, A, exec, omarchy-launch-webapp "https://aistudio.google.com/"',
             "bind = CTRL SHIFT, 4, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenshot",
             "bind = CTRL SHIFT, 3, exec, ~/.local/bin/omarchy-cmd-screenrecord-audio",
             "bind = SUPER SHIFT, E, resizeactive, 67% 0",

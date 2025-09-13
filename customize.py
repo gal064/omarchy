@@ -383,57 +383,6 @@ def manage_user_desktop_files():
 
 
 
-def create_audio_screenrecord_script():
-    """Create audio-enabled screen recording script"""
-    print("Creating audio screen recording script...")
-    
-    home = Path.home()
-    script_path = home / ".local/bin/omarchy-cmd-screenrecord-audio"
-    script_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    script_content = """#!/bin/bash
-
-# Audio-enabled screen recording script based on omarchy-cmd-screenrecord
-
-[[ -f ~/.config/user-dirs.dirs ]] && source ~/.config/user-dirs.dirs
-OUTPUT_DIR="${OMARCHY_SCREENRECORD_DIR:-${XDG_VIDEOS_DIR:-$HOME/Videos}}"
-
-if [[ ! -d "$OUTPUT_DIR" ]]; then
-  notify-send "Screen recording directory does not exist: $OUTPUT_DIR" -u critical -t 3000
-  exit 1
-fi
-
-screenrecording() {
-  filename="$OUTPUT_DIR/screenrecording-audio-$(date +'%Y-%m-%d_%H-%M-%S').mp4"
-  notify-send "Screen recording with audio starting..." -t 1000
-  sleep 1
-
-  if lspci | grep -qi 'nvidia'; then
-    wf-recorder -a -f "$filename" -c libx264 -p crf=23 -p preset=medium -p movflags=+faststart "$@"
-  else
-    wl-screenrec --audio -f "$filename" --ffmpeg-encoder-options="-c:v libx264 -crf 23 -preset medium -movflags +faststart" "$@"
-  fi
-}
-
-if pgrep -x wl-screenrec >/dev/null || pgrep -x wf-recorder >/dev/null; then
-  pkill -x wl-screenrec
-  pkill -x wf-recorder
-  notify-send "Screen recording with audio saved to $OUTPUT_DIR" -t 2000
-elif [[ "$1" == "output" ]]; then
-  screenrecording
-else
-  region=$(slurp) || exit 1
-  screenrecording -g "$region"
-fi"""
-    
-    try:
-        script_path.write_text(script_content)
-        script_path.chmod(0o755)  # Make executable
-        print("✓ Created audio screen recording script")
-        return True
-    except Exception as e:
-        print(f"! Failed to create audio screen recording script: {e}")
-        return False
 
 
 def create_nautilus_vscode_script():
@@ -661,7 +610,7 @@ def update_user_hyprland_config():
             "unbind = SUPER SHIFT, A",
             'bind = SUPER SHIFT, A, exec, omarchy-launch-webapp "https://aistudio.google.com/"',
             "bind = CTRL SHIFT, 4, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenshot",
-            "bind = CTRL SHIFT, 3, exec, ~/.local/bin/omarchy-cmd-screenrecord-audio",
+            "bind = CTRL SHIFT, 3, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenrecord --audio",
             "bind = SUPER SHIFT, E, resizeactive, 67% 0",
         ],
         "envs.conf": [
@@ -1256,9 +1205,6 @@ def main():
         create_nautilus_vscode_script()
         print()
 
-        audio_script_ok = create_audio_screenrecord_script()
-        print()
-
         remove_webapps_from_user_space()
         print()
 
@@ -1313,8 +1259,6 @@ def main():
             print("✓ Set default browser handlers to google-chrome.desktop")
         if desktop_db_ok:
             print("✓ Updated desktop database")
-        if audio_script_ok:
-            print("✓ Created audio screen recording helper")
         print("✓ All changes made to USER configuration files only")
         print("✓ Internal Omarchy files preserved for upgrade compatibility")
 

@@ -523,8 +523,11 @@ def customize_bash_config():
         "        kill $PPID 2>/dev/null",
         "    fi",
         "}",
-        "bind 'set show-all-if-ambiguous on'",
-        "bind 'TAB:menu-complete'",
+        # Only set bind commands in interactive shells
+        "if [[ $- == *i* ]]; then",
+        "    bind 'set show-all-if-ambiguous on'",
+        "    bind 'TAB:menu-complete'",
+        "fi",
         # Enable bash-completion
         "if [ -f /usr/share/bash-completion/bash_completion ]; then",
         "    source /usr/share/bash-completion/bash_completion",

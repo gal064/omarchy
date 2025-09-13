@@ -613,7 +613,7 @@ def update_user_hyprland_config():
             "unbind = SUPER SHIFT, A",
             'bind = SUPER SHIFT, A, exec, omarchy-launch-webapp "https://aistudio.google.com/"',
             "bind = CTRL SHIFT, 4, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenshot",
-            "bind = CTRL SHIFT, 3, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenrecord --audio",
+            "bind = CTRL SHIFT, 3, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenrecord region audio",
             "bind = SUPER SHIFT, E, resizeactive, 67% 0",
         ],
         "envs.conf": [

@@ -618,6 +618,7 @@ def update_user_hyprland_config():
         ],
         "envs.conf": [
             'env = CHROME_FLAGS,"--enable-features=UseOzonePlatform --ozone-platform=wayland --gtk-version=4"',
+            'env = PLAYWRIGHT_CHROMIUM_ARGS,"--enable-features=UseOzonePlatform --ozone-platform=wayland"',
         ],
         "autostart.conf": [
             "exec-once = clipse -listen",

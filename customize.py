@@ -523,16 +523,23 @@ def customize_bash_config():
         "        kill $PPID 2>/dev/null",
         "    fi",
         "}",
-        # Only set bind commands in interactive shells
+        "",
+        "# Only set bind commands in interactive shells",
         "if [[ $- == *i* ]]; then",
+        "    # First Tab lists all matches",
         "    bind 'set show-all-if-ambiguous on'",
-        "    bind 'TAB:menu-complete'",
+        "",
+        "    # Second Tab (after showing list) begins menu completion",
+        "    bind '\"\\t\":menu-complete'",
+        "    bind 'set menu-complete-display-prefix on'   # optional, shows common prefix while cycling",
         "fi",
-        # Enable bash-completion
+        "",
+        "# Enable bash-completion",
         "if [ -f /usr/share/bash-completion/bash_completion ]; then",
         "    source /usr/share/bash-completion/bash_completion",
         "fi",
     ]
+
 
     # Use fenced content addition
     success = add_fenced_content_to_file(

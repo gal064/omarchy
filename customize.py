@@ -517,22 +517,31 @@ def customize_bash_config():
         "alias e='nano'",
         # Add code function for cursor with Alacritty auto-close
         "code() {",
-        "    cursor \"$@\" &",
+        "    /usr/bin/code \"$@\" &",
         "    if [[ \"$(ps -o comm= -p $PPID 2>/dev/null)\" == \"alacritty\" ]]; then",
         "        sleep 0.5",
         "        kill $PPID 2>/dev/null",
         "    fi",
         "}",
-        # Only set bind commands in interactive shells
+        "",
+        "# Only set bind commands in interactive shells",
         "if [[ $- == *i* ]]; then",
+        "    # First Tab lists all matches",
         "    bind 'set show-all-if-ambiguous on'",
-        "    bind 'TAB:menu-complete'",
+        "",
+        "    # Second Tab (after showing list) begins menu completion",
+        "    bind '\"\\t\":menu-complete'",
+        "    bind 'set menu-complete-display-prefix on'   # optional, shows common prefix while cycling",
         "fi",
-        # Enable bash-completion
+        "",
+        "# Enable bash-completion",
         "if [ -f /usr/share/bash-completion/bash_completion ]; then",
         "    source /usr/share/bash-completion/bash_completion",
         "fi",
+        "alias c='claude'",
+        "alias cy='claude --permission-mode bypassPermissions'",
     ]
+
 
     # Use fenced content addition
     success = add_fenced_content_to_file(

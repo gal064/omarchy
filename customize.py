@@ -517,7 +517,7 @@ def customize_bash_config():
         "alias e='nano'",
         # Add code function for cursor with Alacritty auto-close
         "code() {",
-        "    cursor \"$@\" &",
+        "    /usr/bin/code \"$@\" &",
         "    if [[ \"$(ps -o comm= -p $PPID 2>/dev/null)\" == \"alacritty\" ]]; then",
         "        sleep 0.5",
         "        kill $PPID 2>/dev/null",
@@ -538,6 +538,8 @@ def customize_bash_config():
         "if [ -f /usr/share/bash-completion/bash_completion ]; then",
         "    source /usr/share/bash-completion/bash_completion",
         "fi",
+        "alias c='claude'",
+        "alias cy='claude --permission-mode bypassPermissions'",
     ]
 
 

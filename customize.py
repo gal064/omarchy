@@ -1064,10 +1064,7 @@ def install_and_configure_keyd():
 
     # Install keyd
     print("Installing keyd...")
-    success = run_command("yay -S --noconfirm --needed keyd-git")
-    if not success:
-        # Try regular keyd package if keyd-git fails
-        success = run_command("yay -S --noconfirm --needed keyd")
+    success = run_command("yay -S --noconfirm --needed keyd")
 
     if success:
         print("✓ keyd installed successfully")

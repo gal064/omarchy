@@ -1,16 +1,18 @@
+#!/bin/bash
+
 # Exit immediately if a command exits with a non-zero status
-set -e
+set -eEo pipefail
 
-# Give people a chance to retry running the installation
-trap 'echo "Omarchy installation failed! You can retry by running: source ~/.local/share/omarchy/install.sh"' ERR
+# Define Omarchy locations
+export OMARCHY_PATH="$HOME/.local/share/omarchy"
+export OMARCHY_INSTALL="$OMARCHY_PATH/install"
+export OMARCHY_INSTALL_LOG_FILE="/var/log/omarchy-install.log"
+export PATH="$OMARCHY_PATH/bin:$PATH"
 
-# Install everything
-for f in ~/.local/share/omarchy/install/*.sh; do
-  echo -e "\nRunning installer: $f"
-  source "$f"
-done
-
-# Ensure locate is up to date now that everything has been installed
-sudo updatedb
-
-gum confirm "Reboot to apply all settings?" && reboot
+# Install
+source "$OMARCHY_INSTALL/helpers/all.sh"
+source "$OMARCHY_INSTALL/preflight/all.sh"
+source "$OMARCHY_INSTALL/packaging/all.sh"
+source "$OMARCHY_INSTALL/config/all.sh"
+source "$OMARCHY_INSTALL/login/all.sh"
+source "$OMARCHY_INSTALL/post-install/all.sh"

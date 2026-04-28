@@ -1,11 +1,7 @@
 #!/bin/bash
 
-if gum confirm "Refresh Waybar config? This will replace your current Waybar settings with Omarchy defaults."; then
-  # Overwrite local waybar settings with the latest in Omarchy
-  cp -f ~/.local/share/omarchy/config/waybar/config ~/.config/waybar/ 2>/dev/null
-  cp -f ~/.local/share/omarchy/config/waybar/style.css ~/.config/waybar/ 2>/dev/null
+# Overwrite the user configs for the Waybar menu bar with the Omarchy defaults and restart the service.
 
-  # Restart waybar
-  pkill waybar &>/dev/null
-  setsid waybar &>/dev/null &
-fi
+omarchy-refresh-config waybar/config.jsonc
+omarchy-refresh-config waybar/style.css
+omarchy-restart-waybar

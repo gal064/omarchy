@@ -1,38 +1,50 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-ascii_art=' ▄██████▄    ▄▄▄▄███▄▄▄▄      ▄████████    ▄████████  ▄████████    ▄█    █▄    ▄██   ▄  
-███    ███ ▄██▀▀▀███▀▀▀██▄   ███    ███   ███    ███ ███    ███   ███    ███   ███   ██▄
-███    ███ ███   ███   ███   ███    ███   ███    ███ ███    █▀    ███    ███   ███▄▄▄███
-███    ███ ███   ███   ███   ███    ███  ▄███▄▄▄▄██▀ ███         ▄███▄▄▄▄███▄▄ ▀▀▀▀▀▀███
-███    ███ ███   ███   ███ ▀███████████ ▀▀███▀▀▀▀▀   ███        ▀▀███▀▀▀▀███▀  ▄██   ███
-███    ███ ███   ███   ███   ███    ███ ▀███████████ ███    █▄    ███    ███   ███   ███
-███    ███ ███   ███   ███   ███    ███   ███    ███ ███    ███   ███    ███   ███   ███
- ▀██████▀   ▀█   ███   █▀    ███    █▀    ███    ███ ████████▀    ███    █▀     ▀█████▀ 
-                                          ███    ███                                    '
+# Set install mode to online since boot.sh is used for curl installations
+export OMARCHY_ONLINE_INSTALL=true
 
-echo -e "\n$ascii_art\n"
+ansi_art='                 ▄▄▄
+ ▄█████▄    ▄███████████▄    ▄███████   ▄███████   ▄███████   ▄█   █▄    ▄█   █▄
+███   ███  ███   ███   ███  ███   ███  ███   ███  ███   ███  ███   ███  ███   ███
+███   ███  ███   ███   ███  ███   ███  ███   ███  ███   █▀   ███   ███  ███   ███
+███   ███  ███   ███   ███ ▄███▄▄▄███ ▄███▄▄▄██▀  ███       ▄███▄▄▄███▄ ███▄▄▄███
+███   ███  ███   ███   ███ ▀███▀▀▀███ ▀███▀▀▀▀    ███      ▀▀███▀▀▀███  ▀▀▀▀▀▀███
+███   ███  ███   ███   ███  ███   ███ ██████████  ███   █▄   ███   ███  ▄██   ███
+███   ███  ███   ███   ███  ███   ███  ███   ███  ███   ███  ███   ███  ███   ███
+ ▀█████▀    ▀█   ███   █▀   ███   █▀   ███   ███  ███████▀   ███   █▀    ▀█████▀
+                                       ███   █▀                                  '
 
-# ensure git is installed
-if ! command -v git &>/dev/null; then
-  echo "Installing git…"
-  sudo pacman -Sy --noconfirm --needed git
+clear
+echo -e "\n$ansi_art\n"
+
+# Use custom branch if instructed, otherwise default to master
+OMARCHY_REF="${OMARCHY_REF:-master}"
+
+# Set mirror based on branch
+if [[ $OMARCHY_REF == "dev" ]]; then
+  export OMARCHY_MIRROR=edge
+  echo 'Server = https://mirror.omarchy.org/$repo/os/$arch' | sudo tee /etc/pacman.d/mirrorlist >/dev/null
+elif [[ $OMARCHY_REF == "rc" ]]; then
+  export OMARCHY_MIRROR=rc
+  echo 'Server = https://rc-mirror.omarchy.org/$repo/os/$arch' | sudo tee /etc/pacman.d/mirrorlist >/dev/null
+else
+  export OMARCHY_MIRROR=stable
+  echo 'Server = https://stable-mirror.omarchy.org/$repo/os/$arch' | sudo tee /etc/pacman.d/mirrorlist >/dev/null
 fi
 
-echo -e "\nCloning Omarchy from your fork…"
+sudo pacman -Syu --noconfirm --needed git
+
+# Use custom repo if specified, otherwise default to basecamp/omarchy
+OMARCHY_REPO="${OMARCHY_REPO:-basecamp/omarchy}"
+
+echo -e "\nCloning Omarchy from: https://github.com/${OMARCHY_REPO}.git"
 rm -rf ~/.local/share/omarchy/
-git clone https://github.com/gal064/omarchy.git ~/.local/share/omarchy >/dev/null 2>&1
+git clone "https://github.com/${OMARCHY_REPO}.git" ~/.local/share/omarchy >/dev/null
 
-# if you set OMARCHY_REF, use that branch/tag instead of master
-if [[ -n "${OMARCHY_REF:-}" ]]; then
-  echo -e "Using branch/tag: $OMARCHY_REF"
-  (
-    cd ~/.local/share/omarchy
-    git fetch origin "$OMARCHY_REF"
-    git checkout "$OMARCHY_REF"
-  )
-fi
+echo -e "\e[32mUsing branch: $OMARCHY_REF\e[0m"
+cd ~/.local/share/omarchy
+git fetch origin "${OMARCHY_REF}" && git checkout "${OMARCHY_REF}"
+cd -
 
-echo -e "\nStarting installation…"
-# load and run the real installer script from your fork
+echo -e "\nInstallation starting..."
 source ~/.local/share/omarchy/install.sh

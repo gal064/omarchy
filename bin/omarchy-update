@@ -1,31 +1,18 @@
 #!/bin/bash
 
-cd ~/.local/share/omarchy
+set -e
 
-if [[ $1 == "all" ]]; then
-  # Run all migrations
-  last_updated_at=1
-else
-  # Remember the version we're at before upgrading
-  last_updated_at=$(git log -1 --format=%cd --date=unix)
+# Run the update inside a PTY so pacman/yay keep showing download progress
+# while still logging the full session for later analysis.
+if [[ -z $OMARCHY_UPDATE_LOGGED ]]; then
+  script_command=$(printf '%q ' "$0" "$@")
+  exec env OMARCHY_UPDATE_LOGGED=1 script -qefc "$script_command" "/tmp/omarchy-update.log"
 fi
 
-# Get the latest
-git pull
+trap 'echo ""; echo -e "\033[0;31mSomething went wrong during the update!\n\nPlease review the output above carefully, correct the error, and retry the update.\n\nIf you need assistance, get help from the community at https://omarchy.org/discord\033[0m"' ERR
 
-# Run any pending migrations
-for file in migrations/*.sh; do
-  filename=$(basename "$file")
-  migrate_at="${filename%.sh}"
-
-  if [ $migrate_at -gt $last_updated_at ]; then
-    echo -e "\e[32m\nRunning migration ($migrate_at)\e[0m"
-    source $file
-  fi
-done
-
-# Back to where we came from
-cd - >/dev/null
-
-echo -e "\e[32m\nUpdating system packages\e[0m"
-yay -Syu --noconfirm
+if [[ $1 == "-y" ]] || omarchy-update-confirm; then
+  omarchy-snapshot create || (($? == 127))
+  omarchy-update-git
+  omarchy-update-perform
+fi

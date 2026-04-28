@@ -1,2 +1,3 @@
 echo "Install bash-completion"
-yay -S --noconfirm --needed bash-completion
+
+omarchy-pkg-add bash-completion

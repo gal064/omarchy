@@ -18,10 +18,6 @@ import sys
 import json
 from pathlib import Path
 
-# Configuration variables
-TERMINAL = "alacritty"  # Change this to your preferred terminal (e.g., "kitty", "wezterm", "foot")
-
-
 def run_command(command, check=False, shell=True):
     """Run a shell command with error handling and show output in terminal"""
     try:
@@ -183,13 +179,6 @@ def remove_packages():
     else:
         print("! Joplin installation failed")
 
-    print("Installing clipse clipboard manager...")
-    success = run_command("yay -S --noconfirm --needed clipse")
-    if success:
-        print("✓ clipse installed successfully")
-    else:
-        print("! clipse installation failed")
-
     remove_packages_individually(
         [
             "mariadb-libs",
@@ -211,6 +200,7 @@ def remove_packages():
     remove_packages_individually(
         [
             "zoom",
+            "obsidian",
             "obsidian-bin",
             "signal-desktop",
             "dropbox-cli",
@@ -456,7 +446,6 @@ def remove_webapps_from_user_space():
         "HEY",
         "Basecamp",
         "X",
-        "x.com",
     ]
 
     for webapp_name in webapps_to_remove:
@@ -518,7 +507,7 @@ def customize_bash_config():
         # Add code function for cursor with Alacritty auto-close
         "code() {",
         "    /usr/bin/code \"$@\" &",
-        "    if [[ \"$(ps -o comm= -p $PPID 2>/dev/null)\" == \"alacritty\" ]]; then",
+        "    if [[ \"$(ps -o comm= -p $PPID 2>/dev/null)\" =~ ^(alacritty|ghostty)$ ]]; then",
         "        sleep 0.5",
         "        kill $PPID 2>/dev/null",
         "    fi",
@@ -538,8 +527,6 @@ def customize_bash_config():
         "if [ -f /usr/share/bash-completion/bash_completion ]; then",
         "    source /usr/share/bash-completion/bash_completion",
         "fi",
-        "alias c='claude'",
-        "alias cy='claude --permission-mode bypassPermissions'",
     ]
 
 
@@ -603,48 +590,34 @@ def update_user_hyprland_config():
     # Define configurations for each file
     config_files = {
         "bindings.conf": [
-            "unbind = SUPER, O",
-            "unbind = SUPER, G", 
-            "unbind = SUPER, slash",
-            "unbind = SUPER, N",
-            "unbind = SUPER, X",
-            "unbind = SUPER SHIFT, X",
-            "unbind = SUPER, C",
-            "unbind = SUPER, E",
             "unbind = CTRL, F1",
             "unbind = CTRL, F2",
             "unbind = SHIFT CTRL, F2",
-            "unbind = SUPER, P",
-            "bind = SUPER, P, exec, joplin-desktop",
-            "unbind = SUPER, V",
-            f"bind = CTRL SHIFT, C, exec, {TERMINAL} --class clipse -e clipse && hyprctl dispatch sendshortcut 'CTRL,V,'",
+            "unbind = SUPER SHIFT, O",
+            "bind = SUPER SHIFT, J, exec, joplin-desktop",
+            "bind = CTRL SHIFT, C, exec, omarchy-launch-walker -m clipboard",
             "bind = SUPER, E, fullscreen, 1",
-            "unbind = SUPER SHIFT, A",
-            'bind = SUPER SHIFT, A, exec, omarchy-launch-webapp "https://aistudio.google.com/"',
-            "bind = CTRL SHIFT, 4, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenshot",
-            "bind = CTRL SHIFT, 3, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenrecord region audio",
+            "unbind = SUPER SHIFT, E",
             "bind = SUPER SHIFT, E, resizeactive, 67% 0",
+            "bind = CTRL SHIFT, 4, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenshot",
+            "bind = CTRL SHIFT, 3, exec, omarchy-menu screenrecord",
         ],
         "envs.conf": [
             'env = CHROME_FLAGS,"--enable-features=UseOzonePlatform --ozone-platform=wayland --gtk-version=4"',
             'env = PLAYWRIGHT_CHROMIUM_ARGS,"--enable-features=UseOzonePlatform --ozone-platform=wayland"',
         ],
-        "autostart.conf": [
-            "exec-once = clipse -listen",
-        ],
         "input.conf": [
             "input { \n  kb_layout = us,il \n  kb_options = grp:caps_toggle \n scroll_factor = 2.0 \n}",
         ],
     }
-    
+
     # Window rules and misc settings go to main hyprland.conf
     hyprland_conf = hypr_dir / "hyprland.conf"
     main_config = [
-        "windowrule = float, class:(clipse)",
-        "windowrule = size 622 652, class:(clipse)",
-        "windowrule = stayfocused, class:(clipse)",
-        "windowrule = opacity 1 1, class:.*",
-        "misc { \n  new_window_takes_over_fullscreen = 2 \n }\n",
+        "windowrule = opacity 1 1, match:class .*",
+        "misc {",
+        "  new_window_takes_over_fullscreen = 2",
+        "}",
     ]
 
     all_success = True
@@ -1260,8 +1233,8 @@ def main():
             print("✓ Added Bash improvements and completion")
         print("✓ Disabled Apple display brightness controls")
         print("✓ Reset git configuration")
-        print("✓ Installed Joplin and set Super+P keybinding")
-        print("✓ Installed clipse clipboard manager and set Super+V keybinding")
+        print("✓ Installed Joplin and set Super+Shift+J keybinding")
+        print("✓ Bound Ctrl+Shift+C to upstream Walker clipboard manager")
         if waybar_ok:
             print("✓ Configured Waybar language display for Hebrew/English layouts")
         print("✓ Created Nautilus script for opening files in VS Code/Cursor")

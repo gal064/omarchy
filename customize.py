@@ -827,6 +827,45 @@ def customize_ghostty_mac_keys():
     return success
 
 
+def customize_mako_ghostty_persistent():
+    """Make Ghostty notifications persistent (no auto-timeout) in mako.
+
+    Why: Ghostty fires OSC 9 desktop notifications when long-running commands
+    finish, but mako's default-timeout=5000 dismisses them before the user
+    notices. Persistence is controlled by the notification daemon, not Ghostty.
+
+    How to apply: match on `desktop-entry=com.mitchellh.ghostty` (NOT app-name).
+    Ghostty's OSC 9 path forwards the inner app's name as the notification
+    app-name (e.g. "Claude Code"), but tags every notification it relays with
+    its own desktop-entry. So `app-name=ghostty` matches nothing in practice;
+    the desktop-entry matcher is what catches real Ghostty notifications.
+    """
+    print("Configuring mako to keep Ghostty notifications persistent...")
+
+    home = Path.home()
+    mako_conf = home / ".config/mako/config"
+
+    if not mako_conf.exists():
+        print("- ~/.config/mako/config not found, skipping")
+        return False
+
+    backup_file_before_edit(mako_conf)
+    success = add_fenced_content_to_file(
+        mako_conf,
+        [
+            "[desktop-entry=com.mitchellh.ghostty]",
+            "default-timeout=0",
+        ],
+        "MAKO GHOSTTY PERSISTENT",
+    )
+    if success:
+        run_command("makoctl reload")
+        print("✓ Ghostty notifications now persist until dismissed")
+    else:
+        print("! Failed to update mako config")
+    return success
+
+
 def configure_chrome_wayland():
     """Force Google Chrome to launch on native Wayland (not XWayland).
 
@@ -1446,6 +1485,9 @@ def main():
         ghostty_mac_keys_ok = customize_ghostty_mac_keys()
         print()
 
+        mako_ghostty_ok = customize_mako_ghostty_persistent()
+        print()
+
         # update_user_hypridle_config()  # Commented out - user prefers original hypridle config
         # print()
 
@@ -1489,6 +1531,8 @@ def main():
             print("✓ Mac-style Ctrl+V paste & selection auto-copy in Alacritty/Ghostty")
         if ghostty_mac_keys_ok:
             print("✓ Mac-style tabs/splits in Ghostty (Ctrl+T/W/D, Ctrl+Shift+D)")
+        if mako_ghostty_ok:
+            print("✓ Ghostty notifications persist until dismissed (mako)")
         if chrome_wayland_ok:
             print("✓ Google Chrome forced to native Wayland (respects HiDPI scale)")
         print("✓ Removed broken mise-dependent shims from ~/.local/bin/")

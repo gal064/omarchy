@@ -275,6 +275,47 @@ def remove_user_config_directories():
             print(f"✓ Removed {mise_dir}")
 
 
+def remove_broken_mise_shims():
+    """Remove npx wrappers in ~/.local/bin/ that depend on the removed mise.
+
+    Omarchy's `omarchy-npx-install` generates tiny bash scripts of the form:
+        #!/bin/bash
+        exec mise exec node@latest -- npx --yes <package> "$@"
+    Once mise is uninstalled (see remove_packages), these wrappers fail with
+    `mise: not found` and shadow real `npm i -g <pkg>` installs in /usr/bin/.
+
+    Detection is content-based to catch any wrappers (current and future)
+    without a hardcoded name list. Conservative match: small file + exact
+    wrapper signature, so user-authored scripts are left alone.
+    """
+    print("Removing broken mise-dependent shims from ~/.local/bin/...")
+
+    local_bin = Path.home() / ".local/bin"
+    if not local_bin.is_dir():
+        print("- ~/.local/bin not found, skipping")
+        return
+
+    signature = "exec mise exec node@latest -- npx"
+    removed = 0
+
+    for entry in sorted(local_bin.iterdir()):
+        if not entry.is_file() or entry.is_symlink():
+            continue
+        try:
+            if entry.stat().st_size >= 1024:
+                continue
+            if signature not in entry.read_text(errors="ignore"):
+                continue
+        except OSError:
+            continue
+        entry.unlink()
+        print(f"✓ Removed broken shim: {entry.name}")
+        removed += 1
+
+    if removed == 0:
+        print("- No broken mise shims found")
+
+
 def remove_system_asdcontrol():
     """Remove system-installed asdcontrol components (NOT internal Omarchy files)
 
@@ -500,10 +541,10 @@ def customize_bash_config():
     backup_file_before_edit(bashrc_path)
 
     customizations = [
-        "unalias n r 2>/dev/null",
         'export EDITOR="nano"',
         'export SUDO_EDITOR="$EDITOR"',
         "alias e='nano'",
+        "alias open='xdg-open'",
         # Add code function for cursor with Alacritty auto-close
         "code() {",
         "    /usr/bin/code \"$@\" &",
@@ -593,11 +634,9 @@ def update_user_hyprland_config():
             "unbind = CTRL, F1",
             "unbind = CTRL, F2",
             "unbind = SHIFT CTRL, F2",
-            "unbind = SUPER SHIFT, O",
             "bind = SUPER SHIFT, J, exec, joplin-desktop",
             "bind = CTRL SHIFT, C, exec, omarchy-launch-walker -m clipboard",
             "bind = SUPER, E, fullscreen, 1",
-            "unbind = SUPER SHIFT, E",
             "bind = SUPER SHIFT, E, resizeactive, 67% 0",
             "bind = CTRL SHIFT, 4, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenshot",
             "bind = CTRL SHIFT, 3, exec, omarchy-menu screenrecord",
@@ -616,7 +655,7 @@ def update_user_hyprland_config():
     main_config = [
         "windowrule = opacity 1 1, match:class .*",
         "misc {",
-        "  new_window_takes_over_fullscreen = 2",
+        "  on_focus_under_fullscreen = 2",
         "}",
     ]
 
@@ -663,6 +702,199 @@ def update_user_hyprland_config():
 
 
 
+def customize_terminal_paste():
+    """Mac-style Ctrl+V paste and selection auto-copy in Alacritty/Ghostty.
+
+    Why: keyd remaps physical Alt to Ctrl globally so Mac-style Cmd+V works
+    in GUI apps. Terminals don't bind Ctrl+V to paste by default (readline
+    treats it as "verbatim insert"), so the keyd remap silently fails inside
+    terminals. Selecting text also doesn't auto-copy in Ghostty by default.
+
+    Note: Ctrl+C copy can't be added symmetrically — it would break SIGINT
+    (keyd makes Alt+C and Ctrl+C indistinguishable to the terminal). Selection
+    auto-copy plus Ctrl+Shift+C is the workable substitute for Mac's Cmd+C.
+    """
+    print("Configuring terminal Mac-style copy/paste...")
+
+    home = Path.home()
+    all_ok = True
+
+    # Alacritty (TOML — modify in place)
+    alacritty_conf = home / ".config/alacritty/alacritty.toml"
+    if alacritty_conf.exists():
+        backup_file_before_edit(alacritty_conf)
+        content = alacritty_conf.read_text()
+        changed = False
+
+        # Ctrl+V paste
+        new_binding = '{ key = "V", mods = "Control", action = "Paste" },'
+        if new_binding in content:
+            print("- Alacritty Ctrl+V binding already present")
+        else:
+            marker = "bindings = ["
+            if marker in content:
+                content = content.replace(marker, f"{marker}\n{new_binding}", 1)
+                changed = True
+                print("✓ Added Ctrl+V paste binding to Alacritty")
+            else:
+                print("! Could not find bindings array in Alacritty config")
+                all_ok = False
+
+        # Selection auto-copy — Alacritty default is `save_to_clipboard = true`
+        # already in user config; verify and only add if missing.
+        if "save_to_clipboard = true" in content:
+            print("- Alacritty selection auto-copy already enabled")
+        else:
+            content += '\n[selection]\nsave_to_clipboard = true\n'
+            changed = True
+            print("✓ Enabled selection auto-copy in Alacritty")
+
+        if changed:
+            alacritty_conf.write_text(content)
+    else:
+        print("- Alacritty config not found, skipping")
+
+    # Ghostty (line-based — fenced append covers both binding and copy-on-select)
+    ghostty_conf = home / ".config/ghostty/config"
+    if ghostty_conf.exists():
+        backup_file_before_edit(ghostty_conf)
+        success = add_fenced_content_to_file(
+            ghostty_conf,
+            [
+                "keybind = ctrl+v=paste_from_clipboard",
+                "copy-on-select = clipboard",
+            ],
+            "OMARCHY GHOSTTY CUSTOMIZATIONS",
+        )
+        if success:
+            print("✓ Added Ctrl+V paste + copy-on-select to Ghostty")
+        else:
+            print("! Failed to add Ghostty customizations")
+            all_ok = False
+    else:
+        print("- Ghostty config not found, skipping")
+
+    return all_ok
+
+
+def customize_ghostty_mac_keys():
+    """Mac-style tabs and splits in Ghostty (iTerm2 conventions).
+
+    Adds Ctrl+T new tab, Ctrl+W close, Ctrl+D split right, Ctrl+Shift+D
+    split down, plus Ctrl+1..9 tab jumps and Ctrl+Shift+[ / ] tab cycle.
+    Kept in a separate fenced block from the paste customizations so this
+    can be added independently on re-runs.
+
+    Note: these bindings shadow the shell's Ctrl+T (transpose), Ctrl+W
+    (delete-word), and Ctrl+D (EOF) inside Ghostty. Acceptable trade-off
+    for the Mac-like feel; Ctrl+Shift+C/V still copy/paste.
+    """
+    print("Configuring Ghostty Mac-style tabs/splits...")
+
+    home = Path.home()
+    ghostty_conf = home / ".config/ghostty/config"
+    if not ghostty_conf.exists():
+        print("- Ghostty config not found, skipping")
+        return True
+
+    backup_file_before_edit(ghostty_conf)
+    success = add_fenced_content_to_file(
+        ghostty_conf,
+        [
+            "# macOS-style tabs and splits",
+            "keybind = ctrl+t=new_tab",
+            "keybind = ctrl+w=close_surface",
+            "keybind = ctrl+d=new_split:right",
+            "keybind = ctrl+shift+d=new_split:down",
+            "keybind = ctrl+shift+left_bracket=previous_tab",
+            "keybind = ctrl+shift+right_bracket=next_tab",
+            "keybind = ctrl+one=goto_tab:1",
+            "keybind = ctrl+two=goto_tab:2",
+            "keybind = ctrl+three=goto_tab:3",
+            "keybind = ctrl+four=goto_tab:4",
+            "keybind = ctrl+five=goto_tab:5",
+            "keybind = ctrl+six=goto_tab:6",
+            "keybind = ctrl+seven=goto_tab:7",
+            "keybind = ctrl+eight=goto_tab:8",
+            "keybind = ctrl+nine=goto_tab:9",
+        ],
+        "OMARCHY GHOSTTY MAC TABS",
+    )
+    if success:
+        print("✓ Added Mac-style tabs/splits to Ghostty")
+    else:
+        print("! Failed to add Ghostty tabs/splits customizations")
+    return success
+
+
+def configure_chrome_wayland():
+    """Force Google Chrome to launch on native Wayland (not XWayland).
+
+    Why: Hyprland uses fractional scaling (e.g. 1.6× on 4K displays). Native
+    Wayland clients honor that scale via Ozone; XWayland apps render at 1× and
+    look noticeably smaller. The system google-chrome.desktop launches Chrome
+    without Ozone flags, so it falls back to XWayland and looks tiny on HiDPI.
+    Chromium has Wayland flags via ~/.config/chromium-flags.conf, but Chrome's
+    binary doesn't reliably read ~/.config/chrome-flags.conf on Arch, so the
+    most robust fix is a user-local .desktop override.
+
+    How to apply: copy /usr/share/applications/google-chrome.desktop to
+    ~/.local/share/applications and inject Ozone flags into every Exec= line.
+    Also writes ~/.config/chrome-flags.conf as a fallback for wrappers that
+    do read it.
+    """
+    print("Configuring Google Chrome for native Wayland...")
+
+    home = Path.home()
+    flags = "--ozone-platform=wayland --ozone-platform-hint=wayland --enable-features=TouchpadOverscrollHistoryNavigation"
+
+    # Fallback: chrome-flags.conf (read by some wrappers)
+    chrome_flags_conf = home / ".config/chrome-flags.conf"
+    try:
+        chrome_flags_conf.write_text(
+            "--ozone-platform=wayland\n"
+            "--ozone-platform-hint=wayland\n"
+            "--enable-features=TouchpadOverscrollHistoryNavigation\n"
+        )
+        print(f"✓ Wrote {chrome_flags_conf}")
+    except Exception as e:
+        print(f"! Failed to write chrome-flags.conf: {e}")
+
+    # Primary: user-local desktop override with flags injected into Exec=
+    system_desktop = Path("/usr/share/applications/google-chrome.desktop")
+    user_desktop = home / ".local/share/applications/google-chrome.desktop"
+
+    if not system_desktop.exists():
+        print("- /usr/share/applications/google-chrome.desktop not found, skipping desktop override")
+        return False
+
+    try:
+        content = system_desktop.read_text()
+        new_lines = []
+        injected = 0
+        for line in content.splitlines():
+            if (
+                line.startswith("Exec=")
+                and "google-chrome-stable" in line
+                and "--ozone-platform" not in line
+            ):
+                line = line.replace(
+                    "/usr/bin/google-chrome-stable",
+                    f"/usr/bin/google-chrome-stable {flags}",
+                    1,
+                )
+                injected += 1
+            new_lines.append(line)
+
+        user_desktop.parent.mkdir(parents=True, exist_ok=True)
+        user_desktop.write_text("\n".join(new_lines) + "\n")
+        print(f"✓ Wrote {user_desktop} with Wayland flags ({injected} Exec lines patched)")
+        return True
+    except Exception as e:
+        print(f"! Failed to create chrome desktop override: {e}")
+        return False
+
+
 def set_default_browser():
     """Set Google Chrome as the default browser"""
     print("Setting google-chrome.desktop as default browser...")
@@ -676,6 +908,9 @@ def set_default_browser():
         "xdg-settings set default-web-browser google-chrome.desktop",
         "xdg-mime default google-chrome.desktop x-scheme-handler/http",
         "xdg-mime default google-chrome.desktop x-scheme-handler/https",
+        # Typora as default markdown editor
+        "xdg-mime default typora.desktop text/markdown",
+        "xdg-mime default typora.desktop text/x-markdown",
     ]
 
     all_ok = True
@@ -1178,12 +1413,17 @@ def main():
         remove_user_config_directories()
         print()
 
+        remove_broken_mise_shims()
+        print()
+
         remove_system_asdcontrol()
         print()
 
         manage_user_desktop_files()
         print()
 
+        chrome_wayland_ok = configure_chrome_wayland()
+        print()
 
         create_nautilus_vscode_script()
         print()
@@ -1198,6 +1438,12 @@ def main():
         print()
 
         hyprland_ok = update_user_hyprland_config()
+        print()
+
+        terminal_paste_ok = customize_terminal_paste()
+        print()
+
+        ghostty_mac_keys_ok = customize_ghostty_mac_keys()
         print()
 
         # update_user_hypridle_config()  # Commented out - user prefers original hypridle config
@@ -1217,7 +1463,9 @@ def main():
 
         print("Restarting Waybar...")
         run_command("killall waybar")
-        run_command("waybar &>/dev/null &")
+        # Launch via Hyprland so the new waybar is a child of the compositor,
+        # not the script's bash -c shell (which would SIGHUP it on exit).
+        run_command("hyprctl dispatch exec -- uwsm-app -- waybar")
         print("✓ Waybar restarted")
         print()
 
@@ -1237,6 +1485,13 @@ def main():
         print("✓ Bound Ctrl+Shift+C to upstream Walker clipboard manager")
         if waybar_ok:
             print("✓ Configured Waybar language display for Hebrew/English layouts")
+        if terminal_paste_ok:
+            print("✓ Mac-style Ctrl+V paste & selection auto-copy in Alacritty/Ghostty")
+        if ghostty_mac_keys_ok:
+            print("✓ Mac-style tabs/splits in Ghostty (Ctrl+T/W/D, Ctrl+Shift+D)")
+        if chrome_wayland_ok:
+            print("✓ Google Chrome forced to native Wayland (respects HiDPI scale)")
+        print("✓ Removed broken mise-dependent shims from ~/.local/bin/")
         print("✓ Created Nautilus script for opening files in VS Code/Cursor")
         if default_browser_ok:
             print("✓ Set default browser handlers to google-chrome.desktop")

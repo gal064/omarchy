@@ -646,7 +646,7 @@ def update_user_hyprland_config():
             'env = PLAYWRIGHT_CHROMIUM_ARGS,"--enable-features=UseOzonePlatform --ozone-platform=wayland"',
         ],
         "input.conf": [
-            "input { \n  kb_layout = us,il \n  kb_options = grp:caps_toggle \n scroll_factor = 2.0 \n}",
+            "input { \n  kb_layout = us,il \n  kb_options = grp:caps_toggle \n scroll_factor = 1.2\n}",
         ],
     }
 

@@ -545,6 +545,9 @@ def customize_bash_config():
         'export SUDO_EDITOR="$EDITOR"',
         "alias e='nano'",
         "alias open='xdg-open'",
+        "alias c='claude --allow-dangerously-skip-permissions'",
+        "alias cx='codex --ask-for-approval on-request -c '\\''approvals_reviewer=\"auto_review\"'\\'''",
+        "alias ter='codex --ask-for-approval on-request -c '\\''approvals_reviewer=\"auto_review\"'\\'' -m gpt-5.6-terra -c '\\''model_reasoning_effort=\"medium\"'\\'''",
         # Add code function for cursor with Alacritty auto-close
         "code() {",
         "    /usr/bin/code \"$@\" &",

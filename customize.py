@@ -583,6 +583,35 @@ def customize_bash_config():
     return success
 
 
+def customize_ssh_ghostty_truecolor():
+    """Advertise Ghostty truecolor support in SSH sessions.
+
+    OpenSSH forwards TERM automatically but does not normally forward
+    COLORTERM. Codex therefore treats xterm-ghostty as a basic ANSI terminal
+    and omits richer UI styling such as user-message backgrounds.
+    """
+    print("Configuring truecolor support for Ghostty SSH sessions...")
+
+    bashrc_path = Path.home() / ".bashrc"
+    backup_file_before_edit(bashrc_path)
+
+    success = add_fenced_content_to_file(
+        bashrc_path,
+        [
+            'if [[ -n ${SSH_TTY:-} && ${TERM:-} == "xterm-ghostty" ]]; then',
+            '  export COLORTERM="truecolor"',
+            "fi",
+        ],
+        "GHOSTTY SSH TRUECOLOR",
+    )
+
+    if success:
+        print("✓ Ghostty SSH sessions now advertise truecolor support")
+    else:
+        print("! Failed to configure Ghostty SSH truecolor support")
+    return success
+
+
 def update_user_hypridle_config():
     """Update user hypridle configuration with backup and fencing"""
     print("Updating user hypridle configuration...")
@@ -1476,6 +1505,9 @@ def main():
         bash_ok = customize_bash_config()
         print()
 
+        ssh_ghostty_truecolor_ok = customize_ssh_ghostty_truecolor()
+        print()
+
         hyprland_ok = update_user_hyprland_config()
         print()
 
@@ -1521,6 +1553,8 @@ def main():
             print("✓ Set Chrome environment variables and window rules in Hyprland")
         if bash_ok:
             print("✓ Added Bash improvements and completion")
+        if ssh_ghostty_truecolor_ok:
+            print("✓ Enabled truecolor Codex styling in Ghostty SSH sessions")
         print("✓ Disabled Apple display brightness controls")
         print("✓ Reset git configuration")
         print("✓ Installed Joplin and set Super+Shift+J keybinding")

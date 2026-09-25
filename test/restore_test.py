@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -186,6 +187,42 @@ class RestoreTest(unittest.TestCase):
             )
         )
         self.assertFalse(path.exists())
+
+    def test_handy_paste_script_and_bindings_are_removed(self):
+        script = self.home / ".local/bin/handy-wayland-paste"
+        script.parent.mkdir(parents=True)
+        script.write_text(f"#!/bin/bash\n{restore.NAUTILUS_MARKER}\n")
+        bindings = self.home / ".config/hypr/bindings.lua"
+        bindings.parent.mkdir(parents=True)
+        bindings.write_text(
+            "-- mine\n-- === START HANDY DICTATION ===\nx()\n-- === END HANDY DICTATION ===\n"
+        )
+
+        restore.restore_user_file(self.home, ".local/bin/handy-wayland-paste", False)
+        restore.restore_user_file(self.home, ".config/hypr/bindings.lua", False)
+
+        self.assertFalse(script.exists())
+        self.assertEqual(bindings.read_text(), "-- mine\n")
+
+    def test_handy_paste_method_is_restored_only_while_handy_is_stopped(self):
+        path = self.home / restore.HANDY_SETTINGS
+        path.parent.mkdir(parents=True)
+        script = str(self.home / ".local/bin/handy-wayland-paste")
+        path.write_text(
+            json.dumps(
+                {"settings": {"paste_method": "external_script", "external_script_path": script}}
+            )
+        )
+
+        with patch("restore.handy_is_running", return_value=True):
+            self.assertFalse(restore.restore_handy_paste_method(self.home, False))
+        with patch("restore.handy_is_running", return_value=False):
+            self.assertTrue(restore.restore_handy_paste_method(self.home, False))
+            self.assertIsNone(restore.restore_handy_paste_method(self.home, False))
+
+        settings = json.loads(path.read_text())["settings"]
+        self.assertEqual(settings["paste_method"], "direct")
+        self.assertIsNone(settings["external_script_path"])
 
     def test_unrelated_original_file_is_not_in_restore_allowlist(self):
         unrelated = self.home / ".config/example.conf.original"

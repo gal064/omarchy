@@ -11,6 +11,7 @@ Quattro's commands and user configuration entry points.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -120,6 +121,52 @@ right = end
 c = C-c
 # === END OMARCHY CUSTOMIZATION ===
 """
+
+MANAGED_MARKER = "# Managed by customize.py for Omarchy Quattro."
+
+HANDY_SETTINGS = ".local/share/com.pais.handy/settings_store.json"
+HANDY_PASTE_SCRIPT = ".local/bin/handy-wayland-paste"
+HANDY_PASTE_SCRIPT_CONTENT = f"""#!/bin/bash
+{MANAGED_MARKER}
+# Handy "External Script" paste method for Hyprland. Handy sends its
+# auto-submit key over X11, which native Wayland windows never receive, so
+# type the text with wtype and send the auto-submit key natively.
+set -euo pipefail
+
+text=${{1-}}
+settings="$HOME/{HANDY_SETTINGS}"
+
+if [[ -n $text ]]; then
+  wtype -- "$text"
+fi
+
+auto_submit=$(jq -r '.settings.auto_submit // false' "$settings" 2>/dev/null || echo false)
+# XWayland windows already get Handy's own X11 key press; avoid a double submit.
+xwayland=$(hyprctl activewindow -j 2>/dev/null | jq -r '.xwayland // false' || echo false)
+
+if [[ $auto_submit == "true" && $xwayland != "true" ]]; then
+  sleep 0.05
+  case $(jq -r '.settings.auto_submit_key // "enter"' "$settings") in
+    ctrl_enter) wtype -M ctrl -k Return -m ctrl ;;
+    cmd_enter) wtype -M logo -k Return -m logo ;;
+    *) wtype -k Return ;;
+  esac
+fi
+"""
+
+HANDY_BINDINGS = (
+    "-- Handy can't grab keys on Wayland, so Hyprland drives it. While recording,",
+    '-- the "handy" submap makes Escape cancel without swallowing Escape the rest',
+    "-- of the time. Any bind in the submap returns to normal.",
+    'o.bind("SUPER + D", "Handy dictation", function()',
+    '  hl.dispatch(hl.dsp.exec_cmd("handy --toggle-transcription"))',
+    '  hl.dispatch(hl.dsp.submap("handy"))',
+    "end)",
+    'hl.define_submap("handy", "reset", function()',
+    '  o.bind("SUPER + D", "Handy: stop and paste", "handy --toggle-transcription")',
+    '  o.bind("ESCAPE", "Handy: cancel", "handy --cancel")',
+    "end)",
+)
 
 
 class CustomizationError(RuntimeError):
@@ -578,20 +625,84 @@ while IFS= read -r file; do
   [[ -n $file && -e $file ]] && "${editor[@]}" "$file"
 done <<< "$selected"
 """
-        current = script_path.read_text() if script_path.exists() else ""
+        self.write_managed_script(script_path, content, "Nautilus script")
+
+    def write_managed_script(self, path: Path, content: str, description: str) -> None:
+        current = path.read_text() if path.exists() else ""
         if current == content:
-            print(f"- Nautilus script already current: {script_path}")
+            print(f"- {description} already current: {path}")
             return
         if self.dry_run:
-            print(f"- Would write {script_path}")
+            print(f"- Would write {path}")
             return
 
-        self.backup(script_path)
-        script_path.parent.mkdir(parents=True, exist_ok=True)
-        script_path.write_text(content)
-        script_path.chmod(0o755)
-        self.record_applied(script_path)
-        print(f"✓ Wrote {script_path}")
+        self.backup(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        path.chmod(0o755)
+        self.record_applied(path)
+        print(f"✓ Wrote {path}")
+
+    def configure_handy(self) -> None:
+        """Make Handy dictation, auto-submit, and cancel work under Hyprland.
+
+        Handy grabs shortcuts and sends its auto-submit key through X11, which
+        native Wayland windows never see. Hyprland owns the shortcuts instead,
+        and Handy pastes through a script that sends keys with wtype.
+        """
+        print("\nConfiguring Handy dictation...")
+        if not self.run("omarchy-cmd-present", "handy", quiet=True):
+            print("- Handy is not installed; skipping Handy dictation setup")
+            return
+
+        script = self.home_path(HANDY_PASTE_SCRIPT)
+        self.write_managed_script(script, HANDY_PASTE_SCRIPT_CONTENT, "Handy paste script")
+
+        if not self.upsert_fenced(
+            self.home_path(".config/hypr/bindings.lua"), HANDY_BINDINGS, "HANDY DICTATION"
+        ):
+            self.failures.append("Handy Hyprland bindings")
+
+        self.configure_handy_paste_method(script)
+
+    def configure_handy_paste_method(self, script: Path) -> None:
+        path = self.home_path(HANDY_SETTINGS)
+        try:
+            store = json.loads(path.read_text()) if path.exists() else {}
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"! Could not read Handy settings {path}: {error}")
+            self.failures.append("Handy paste method")
+            return
+
+        # Handy fills every missing setting with its default, so a fresh store
+        # holding only these keys is valid before Handy's first launch.
+        settings = store.setdefault("settings", {})
+        wanted = {"paste_method": "external_script", "external_script_path": str(script)}
+        if all(settings.get(key) == value for key, value in wanted.items()):
+            print(f"- Handy paste method already current in {path}")
+            return
+        if self.dry_run:
+            print(f"- Would set Handy paste method to {script} in {path}")
+            return
+
+        # Handy rewrites its store from memory, so edit it only while stopped.
+        was_running = self.run("pgrep", "-x", "handy", quiet=True)
+        if was_running and not self.run(
+            "timeout", "5", "bash", "-c",
+            "pkill -x handy; while pgrep -x handy >/dev/null; do sleep 0.1; done",
+        ):
+            print("! Could not stop Handy to update its settings")
+            self.failures.append("Handy paste method")
+            return
+
+        self.backup(path)
+        settings.update(wanted)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(store, indent=2) + "\n")
+        print(f"✓ Set Handy paste method to {script}")
+
+        if was_running and not self.run("setsid", "-f", "uwsm-app", "--", "handy", quiet=True):
+            self.failures.append("restart Handy")
 
     def customize_bash(self) -> None:
         print("\nConfiguring Bash...")
@@ -904,6 +1015,7 @@ done <<< "$selected"
         self.customize_bash()
         self.customize_ssh_ghostty_truecolor()
         self.customize_hyprland()
+        self.configure_handy()
         self.customize_terminal_paste()
         self.customize_ghostty_mac_keys()
         self.install_and_configure_keyd()

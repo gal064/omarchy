@@ -1,3 +1,4 @@
+import json
 import subprocess
 import tempfile
 import unittest
@@ -309,6 +310,57 @@ class CustomizeTest(unittest.TestCase):
 
         self.assertEqual(backup.read_text(), "code\n")
 
+    def test_handy_setup_is_idempotent_and_preserves_settings(self):
+        settings_path = self.home / customize.HANDY_SETTINGS
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text(
+            '{"settings": {"auto_submit": true, "paste_method": "direct"}, "other": 1}'
+        )
+        customizer = RecordingCustomizer(self.home)
+
+        customizer.configure_handy()
+        first_commands = list(customizer.commands)
+        customizer.commands.clear()
+        customizer.configure_handy()
+
+        script = self.home / customize.HANDY_PASTE_SCRIPT
+        store = json.loads(settings_path.read_text())
+        bindings = (self.home / ".config/hypr/bindings.lua").read_text()
+        self.assertEqual(store["other"], 1)
+        self.assertTrue(store["settings"]["auto_submit"])
+        self.assertEqual(store["settings"]["paste_method"], "external_script")
+        self.assertEqual(store["settings"]["external_script_path"], str(script))
+        self.assertEqual(bindings.count("START HANDY DICTATION"), 1)
+        self.assertEqual(bindings.count('"SUPER + D", "Handy dictation"'), 1)
+        self.assertTrue(script.stat().st_mode & 0o111)
+        self.assertEqual(
+            subprocess.run(["bash", "-n", str(script)], check=False).returncode, 0
+        )
+        self.assertIn(("omarchy-cmd-present", "handy"), first_commands)
+        self.assertIn(("setsid", "-f", "uwsm-app", "--", "handy"), first_commands)
+        self.assertEqual(customizer.commands, [("omarchy-cmd-present", "handy")])
+        self.assertTrue(
+            settings_path.with_name("settings_store.json.quattro-original").exists()
+        )
+
+    def test_handy_setup_is_skipped_when_handy_is_not_installed(self):
+        customizer = RecordingCustomizer(self.home)
+        customizer.run = lambda *command, quiet=False: command[0] != "omarchy-cmd-present"
+
+        customizer.configure_handy()
+
+        self.assertEqual(customizer.failures, [])
+        self.assertFalse((self.home / customize.HANDY_PASTE_SCRIPT).exists())
+        self.assertFalse((self.home / ".config/hypr/bindings.lua").exists())
+        self.assertFalse((self.home / customize.HANDY_SETTINGS).exists())
+
+    def test_handy_settings_are_created_before_first_launch(self):
+        customizer = RecordingCustomizer(self.home)
+        customizer.configure_handy_paste_method(self.home / customize.HANDY_PASTE_SCRIPT)
+
+        store = json.loads((self.home / customize.HANDY_SETTINGS).read_text())
+        self.assertEqual(store["settings"]["paste_method"], "external_script")
+
     def test_webapps_are_managed_through_path_commands(self):
         customizer = RecordingCustomizer(self.home)
         customizer.manage_desktop_entries()
@@ -484,6 +536,7 @@ class CustomizeTest(unittest.TestCase):
         bindings = (self.home / ".config/hypr/bindings.lua").read_text()
         bashrc = (self.home / ".bashrc").read_text()
         self.assertEqual(bindings.count("START OMARCHY BINDING CUSTOMIZATIONS"), 1)
+        self.assertEqual(bindings.count("START HANDY DICTATION"), 1)
         self.assertEqual(bashrc.count("START BASH CUSTOMIZATIONS"), 1)
         self.assertEqual(
             subprocess.run(

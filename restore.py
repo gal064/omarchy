@@ -10,6 +10,7 @@ or delete web apps that may contain user data.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -36,7 +37,15 @@ USER_TARGETS = (
     ".local/state/omarchy/defaults/editor",
     ".local/share/applications/google-chrome.desktop",
     ".local/share/nautilus/scripts/open-in-vscode",
+    ".local/bin/handy-wayland-paste",
 )
+
+MANAGED_SCRIPTS = (
+    ".local/share/nautilus/scripts/open-in-vscode",
+    ".local/bin/handy-wayland-paste",
+)
+
+HANDY_SETTINGS = ".local/share/com.pais.handy/settings_store.json"
 
 REMOVED_TARGETS = (
     ".config/nvim",
@@ -51,7 +60,7 @@ REMOVED_TARGETS = (
 
 FENCES_BY_TARGET = {
     ".bashrc": ("BASH CUSTOMIZATIONS", "GHOSTTY SSH TRUECOLOR"),
-    ".config/hypr/bindings.lua": ("OMARCHY BINDING CUSTOMIZATIONS",),
+    ".config/hypr/bindings.lua": ("OMARCHY BINDING CUSTOMIZATIONS", "HANDY DICTATION"),
     ".config/hypr/input.lua": ("OMARCHY INPUT CUSTOMIZATIONS",),
     ".config/hypr/looknfeel.lua": ("OMARCHY LOOK CUSTOMIZATIONS",),
     ".config/uwsm/env.d/99-gal-customizations": ("PLAYWRIGHT WAYLAND CUSTOMIZATION",),
@@ -156,7 +165,7 @@ def restore_user_file(home: Path, relative: str, dry_run: bool) -> bool | None:
     content = path.read_text()
     changed = False
 
-    if relative == ".local/share/nautilus/scripts/open-in-vscode":
+    if relative in MANAGED_SCRIPTS:
         changed = NAUTILUS_MARKER in content
         if changed:
             content = ""
@@ -176,6 +185,34 @@ def restore_user_file(home: Path, relative: str, dry_run: bool) -> bool | None:
         path.unlink()
         print(f"✓ Removed customization-created file {path}")
     clear_restore_metadata(backup, applied, dry_run)
+    return True
+
+
+def handy_is_running() -> bool:
+    return subprocess.run(["pgrep", "-x", "handy"], capture_output=True).returncode == 0
+
+
+def restore_handy_paste_method(home: Path, dry_run: bool) -> bool | None:
+    """Point Handy back at direct typing if it still uses the managed script."""
+    path = home / HANDY_SETTINGS
+    if not path.exists():
+        return None
+    store = json.loads(path.read_text())
+    settings = store.get("settings", {})
+    if settings.get("external_script_path") != str(home / ".local/bin/handy-wayland-paste"):
+        return None
+    if handy_is_running():
+        print(f"! Quit Handy, then rerun to restore its paste method in {path}")
+        return False
+    if dry_run:
+        print(f"- Would restore Handy's direct paste method in {path}")
+        return True
+
+    if settings.get("paste_method") == "external_script":
+        settings["paste_method"] = "direct"
+    settings["external_script_path"] = None
+    path.write_text(json.dumps(store, indent=2) + "\n")
+    print(f"✓ Restored Handy's direct paste method in {path}")
     return True
 
 
@@ -292,6 +329,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             restored += 1
         elif result is False:
             restore_failed = True
+    handy_result = restore_handy_paste_method(Path.home(), args.dry_run)
+    if handy_result is True:
+        restored += 1
+    elif handy_result is False:
+        restore_failed = True
     keyd_failed = False
     if not args.skip_keyd:
         keyd_result = restore_keyd(args.dry_run)

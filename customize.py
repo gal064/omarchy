@@ -61,7 +61,6 @@ REMOVE_FONT_PACKAGES = (
 
 INSTALL_PACKAGES = (
     "nano",
-    "joplin-bin",
     "ttf-liberation",
 )
 
@@ -349,16 +348,11 @@ class Customizer:
         print(f"✓ Removed legacy Chrome launcher {path}")
 
     def manage_packages(self) -> bool:
-        # Keep the current editor stack until Nano is installed. Install
-        # joplin-bin directly: yay/pacman resolves its joplin-appimage conflict
-        # in one package transaction, so a failed build leaves the old app intact.
+        # Keep the current editor stack until Nano is installed.
         print("\nInstalling preferred packages...")
         nano_ready = False
         for package in INSTALL_PACKAGES:
-            installer = (
-                "omarchy-pkg-aur-add" if package == "joplin-bin" else "omarchy-pkg-add"
-            )
-            if self.run(installer, package):
+            if self.run("omarchy-pkg-add", package):
                 print(f"✓ Installed or retained {package}")
                 if package == "nano":
                     nano_ready = True

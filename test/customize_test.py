@@ -160,9 +160,9 @@ class CustomizeTest(unittest.TestCase):
         self.assertIn(("omarchy-pkg-drop", "mise-bin"), customizer.commands)
         for retained in ("cargo", "clang", "llvm", "gcc14", "lua51"):
             self.assertNotIn(retained, flattened)
-        self.assertIn("joplin-bin", flattened)
+        self.assertNotIn("joplin-bin", flattened)
         self.assertIn("localsend", flattened)
-        self.assertIn(("omarchy-pkg-aur-add", "joplin-bin"), customizer.commands)
+        self.assertIn(("omarchy-pkg-add", "nano"), customizer.commands)
         self.assertIn(("omarchy-pkg-drop", "neovim"), customizer.commands)
 
     def write_mise_wrapper(self, name: str) -> Path:
@@ -241,23 +241,6 @@ class CustomizeTest(unittest.TestCase):
         self.assertNotIn(("omarchy-pkg-drop", "nvim"), commands)
         self.assertNotIn(("omarchy-pkg-drop", "neovim"), commands)
         self.assertNotIn(("omarchy-pkg-drop", "omarchy-nvim"), commands)
-
-    def test_joplin_replacement_uses_one_package_transaction(self):
-        customizer = customize.Customizer(home=self.home)
-        commands: list[tuple[str, ...]] = []
-
-        def run(*command: str, quiet: bool = False) -> bool:
-            del quiet
-            commands.append(command)
-            return command != ("omarchy-pkg-aur-add", "joplin-bin")
-
-        with patch.object(customizer, "run", side_effect=run):
-            customizer.manage_packages()
-
-        self.assertEqual(commands.count(("omarchy-pkg-aur-add", "joplin-bin")), 1)
-        self.assertNotIn(("omarchy-pkg-drop", "joplin-appimage"), commands)
-        self.assertNotIn(("omarchy-pkg-aur-add", "joplin-appimage"), commands)
-        self.assertIn("install joplin-bin", customizer.failures)
 
     def test_user_data_is_preserved_when_package_removal_fails(self):
         nvim = self.home / ".config/nvim"

@@ -870,25 +870,31 @@ done <<< "$selected"
         foot = self.home_path(".config/foot/foot.ini")
         if foot.exists():
             current = foot.read_text()
+            binding = "clipboard-paste=Control+v Shift+Insert Control+Shift+v XF86Paste"
             updated, count = re.subn(
-                r"(?m)^clipboard-paste=.*$",
-                "clipboard-paste=Control+v Shift+Insert Control+Shift+v XF86Paste",
-                current,
-                count=1,
+                r"(?m)^clipboard-paste=.*$", binding, current, count=1
             )
             if count == 0:
-                binding = (
-                    "clipboard-paste=Control+v Shift+Insert Control+Shift+v XF86Paste"
-                )
-                if "[key-bindings]" in current:
-                    updated = current.replace(
+                if "[key-bindings]" in updated:
+                    updated = updated.replace(
                         "[key-bindings]", f"[key-bindings]\n{binding}", 1
                     )
                 else:
-                    updated = f"{current.rstrip()}\n\n[key-bindings]\n{binding}\n"
-                self._write_updated(foot, current, updated, "Foot paste")
-            else:
-                self._write_updated(foot, current, updated, "Foot paste")
+                    updated = f"{updated.rstrip()}\n\n[key-bindings]\n{binding}\n"
+
+            # Foot copies selections to the primary selection only by default.
+            # Keys before any section header belong to [main].
+            target = "selection-target=clipboard"
+            updated, count = re.subn(
+                r"(?m)^selection-target=.*$", target, updated, count=1
+            )
+            if count == 0:
+                updated, count = re.subn(
+                    r"(?m)^\[main\]\s*$", f"[main]\n{target}", updated, count=1
+                )
+            if count == 0:
+                updated = f"{target}\n{updated}"
+            self._write_updated(foot, current, updated, "Foot paste")
 
     def customize_ghostty_mac_keys(self) -> None:
         ghostty = self.home_path(".config/ghostty/config")

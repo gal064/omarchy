@@ -411,6 +411,7 @@ class CustomizeTest(unittest.TestCase):
         customizer.customize_ghostty_mac_keys()
 
         self.assertIn("clipboard-paste=Control+v", foot.read_text())
+        self.assertTrue(foot.read_text().startswith("selection-target=clipboard\n"))
         self.assertIn("copy-on-select = clipboard", ghostty.read_text())
         self.assertIn("keybind = ctrl+t=new_tab", ghostty.read_text())
 
@@ -430,6 +431,20 @@ class CustomizeTest(unittest.TestCase):
         self.assertEqual(parsed["keyboard"]["bindings"][0]["key"], "V")
         self.assertIn("[key-bindings]", foot.read_text())
         self.assertIn("clipboard-paste=Control+v", foot.read_text())
+        self.assertIn("[main]\nselection-target=clipboard\n", foot.read_text())
+
+    def test_foot_selection_target_replaces_existing_value(self):
+        foot = self.home / ".config/foot/foot.ini"
+        foot.parent.mkdir(parents=True)
+        foot.write_text("[main]\nselection-target=primary\n")
+
+        customizer = RecordingCustomizer(self.home)
+        customizer.customize_terminal_paste()
+        customizer.customize_terminal_paste()
+
+        text = foot.read_text()
+        self.assertEqual(text.count("selection-target="), 1)
+        self.assertIn("selection-target=clipboard", text)
 
     def test_alacritty_handles_compact_dotted_and_inline_toml(self):
         samples = (

@@ -37,7 +37,8 @@ REMOVE_PACKAGES = (
     "tree-sitter-cli",
     "mariadb-libs",
     "mise-bin",
-    "ruby",
+    # ruby stays: Omarchy 4's tobi-try depends on it, so omarchy-pkg-drop
+    # would refuse the removal anyway.
     "wl-clip-persist",
     # Applications intentionally excluded from this setup. Both legacy and
     # current names are harmless because omarchy-pkg-drop ignores missing ones.
@@ -876,10 +877,12 @@ done <<< "$selected"
             self.failures.append("record applied keyd config")
             return
 
-        if not self.run("sudo", "systemctl", "enable", "--now", "keyd"):
+        # Restart instead of `keyd reload`: keyd 2.6.0 segfaults on reload after
+        # a config swap, and restart also covers a freshly installed daemon.
+        if not self.run("sudo", "systemctl", "enable", "keyd"):
             self.failures.append("enable keyd")
-        if not self.run("sudo", "keyd", "reload"):
-            self.failures.append("reload keyd")
+        if not self.run("sudo", "systemctl", "restart", "keyd"):
+            self.failures.append("restart keyd")
 
     def finalize(self) -> None:
         print("\nRefreshing desktop and Hyprland state...")

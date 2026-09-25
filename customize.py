@@ -1,839 +1,795 @@
 #!/usr/bin/env python3
 
-"""
-Post-install customization script for Omarchy (SIMPLIFIED VERSION)
-This script removes unwanted applications and their configurations
-and switches from Chromium to Google Chrome.
+"""Apply Gal's post-install customizations to Omarchy Quattro.
 
-IMPORTANT: This version leverages Omarchy's browser abstraction layer
-(omarchy-launch-browser/omarchy-launch-webapp) and follows best practices
-by ONLY modifying user configs, preserving upgrade compatibility.
+Run this only after the official ``omarchy upgrade to quattro`` flow has
+completed and the machine has rebooted. Omarchy-owned files under
+``/usr/share/omarchy`` are never modified; durable changes are made through
+Quattro's commands and user configuration entry points.
 """
 
+from __future__ import annotations
+
+import argparse
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
-import json
+import tempfile
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-def run_command(command, check=False, shell=True):
-    """Run a shell command with error handling and show output in terminal"""
-    try:
-        # Always source bash functions, escape double quotes in command
-        command_escaped = command.replace('"', r"\"")
-        command = f'bash -c "source ~/.local/share/omarchy/default/bash/functions && {command_escaped}"'
-
-        result = subprocess.run(command, shell=shell, check=check)
-        return result.returncode == 0
-    except subprocess.CalledProcessError:
-        return False
-
-
-def backup_file_before_edit(file_path):
-    """Create a .original backup of a file before editing it"""
-    file_path = Path(file_path)
-
-    if not file_path.exists():
-        print(f"- File {file_path} doesn't exist, no backup needed")
-        return False
-
-    backup_path = file_path.with_suffix(file_path.suffix + ".original")
-
-    # Don't overwrite existing backup
-    if backup_path.exists():
-        print(f"- Backup {backup_path} already exists, skipping")
-        return True
-
-    try:
-        shutil.copy2(file_path, backup_path)
-        print(f"✓ Created backup: {backup_path}")
-        return True
-    except Exception as e:
-        print(f"! Failed to create backup of {file_path}: {e}")
-        return False
-
-
-def add_fenced_content_to_file(
-    file_path, content_lines, fence_label="OMARCHY CUSTOMIZATION"
-):
-    """Add content to file with clear fencing markers for easy reversal"""
-    file_path = Path(file_path)
-
-    # Use CSS comment syntax for .css files, otherwise use shell/config syntax
-    if str(file_path).endswith('.css'):
-        start_fence = f"/* === START {fence_label} === */"
-        end_fence = f"/* === END {fence_label} === */"
-    else:
-        start_fence = f"# === START {fence_label} ==="
-        end_fence = f"# === END {fence_label} ==="
-
-    try:
-        if file_path.exists():
-            current_content = file_path.read_text()
-        else:
-            current_content = ""
-
-        # Check if our fenced section already exists
-        if start_fence in current_content and end_fence in current_content:
-            print(f"- Fenced section '{fence_label}' already exists in {file_path}")
-            return True
-
-        # Create the fenced content
-        fenced_content = f"\n{start_fence}\n"
-        for line in content_lines:
-            fenced_content += f"{line}\n"
-        fenced_content += f"{end_fence}\n"
-
-        # Append to file
-        with open(file_path, "a") as f:
-            f.write(fenced_content)
-
-        print(f"✓ Added fenced content to {file_path}")
-        return True
-
-    except Exception as e:
-        print(f"! Failed to add fenced content to {file_path}: {e}")
-        return False
-
-
-def parse_jsonc_to_json(jsonc_text):
-    """Best-effort conversion of JSONC (comments, trailing commas) to valid JSON string"""
-    # Remove block comments
-    without_block = re.sub(r"/\*[\s\S]*?\*/", "", jsonc_text)
-    # Remove line comments (naive, may affect comment-like content in strings)
-    without_line = re.sub(r"(?m)//.*$", "", without_block)
-    # Remove trailing commas before } or ]
-    without_trailing_commas = re.sub(r",\s*([}\]])", r"\1", without_line)
-    return without_trailing_commas
-
-
-def remove_packages_individually(packages, action_description="packages"):
-    """Remove packages individually so failure of one doesn't prevent removal of others"""
-    print(f"Removing {action_description}...")
-
-    removed_count = 0
-    failed_packages = []
-
-    for package in packages:
-        success = run_command(f"yay -Rns --noconfirm {package}")
-        if success:
-            print(f"✓ {package} removed successfully")
-            removed_count += 1
-        else:
-            print(f"- {package} not found or already removed")
-            failed_packages.append(package)
-
-    if removed_count > 0:
-        print(f"✓ {removed_count} {action_description} removed successfully")
-
-    if failed_packages:
-        print(
-            f"- {len(failed_packages)} {action_description} were not found or already removed: {', '.join(failed_packages)}"
-        )
-
-    return removed_count, failed_packages
-
-
-def remove_packages():
-    """Remove chromium and neovim packages, install Google Chrome"""
-    print("Removing chromium and installing Google Chrome...")
-
-    # Remove chromium
-    success = run_command("yay -Rns --noconfirm chromium")
-    if success:
-        print("✓ Chromium removed successfully")
-    else:
-        print("! Chromium removal failed or was already removed")
-
-    # Install Google Chrome
-    success = run_command("yay -S --noconfirm --needed google-chrome")
-    if success:
-        print("✓ Google Chrome installed successfully")
-    else:
-        print("! Google Chrome installation failed")
-
-    remove_packages_individually(
-        ["nvim", "luarocks", "tree-sitter-cli"], "neovim and related packages"
-    )
-
-    print("Installing nano as replacement editor...")
-    success = run_command("yay -S --noconfirm --needed nano")
-    if success:
-        print("✓ nano installed successfully")
-    else:
-        print("! nano installation failed")
-
-    print("Installing bash-completion...")
-    success = run_command("yay -S --noconfirm --needed bash-completion")
-    if success:
-        print("✓ bash-completion installed successfully")
-    else:
-        print("! bash-completion installation failed")
-
-    print("Installing Joplin...")
-    success = run_command("yay -S --noconfirm --needed joplin-appimage")
-    if success:
-        print("✓ Joplin installed successfully")
-    else:
-        print("! Joplin installation failed")
-
-    remove_packages_individually(
-        [
-            "mariadb-libs",
-            "cargo",
-            "clang",
-            "llvm",
-            # intentionally skip core runtime libs that are depended upon system-wide
-            # "llvm-libs",
-            "mise",
-            "ruby",
-            # "gcc",
-            # "gcc-libs",
-            "gcc14",
-            "wl-clip-persist",
-        ],
-        "additional unwanted packages",
-    )
-
-    remove_packages_individually(
-        [
-            "zoom",
-            "obsidian",
-            "obsidian-bin",
-            "signal-desktop",
-            "dropbox-cli",
-            "1password-beta",
-            "1password-cli",
-            "localsend-bin",
-        ],
-        "zoom, obsidian, signal, dropbox, 1password, and localsend",
-    )
-
-
-def manage_font_packages():
-    """Manage font packages according to fork preferences"""
-    print("Managing font packages...")
-
-    # Remove unwanted CJK and extra fonts
-    remove_packages_individually(
-        ["noto-fonts-cjk", "noto-fonts-extra"], "unwanted font packages"
-    )
-
-    # Install ttf-liberation for Hebrew support
-    print("Installing ttf-liberation for Hebrew support...")
-    success = run_command("yay -S --noconfirm --needed ttf-liberation")
-    if success:
-        print("✓ ttf-liberation installed successfully")
-    else:
-        print("! ttf-liberation installation failed")
-
-
-def remove_user_config_directories():
-    """Remove user configuration directories for uninstalled applications"""
-    print("Removing user configuration directories...")
-
-    home = Path.home()
-
-    # Remove neovim configurations
-    nvim_dirs = [
-        home / ".config/nvim",
-        home / ".local/share/nvim",
-        home / ".local/state/nvim",
-        home / ".cache/nvim",
-    ]
-
-    for nvim_dir in nvim_dirs:
-        if nvim_dir.exists():
-            shutil.rmtree(nvim_dir)
-            print(f"✓ Removed {nvim_dir}")
-
-    # Remove 1Password configurations
-    password_dirs = [
-        home / ".config/1Password",
-        home / ".local/share/1Password",
-        home / ".cache/1Password",
-        home / ".ssh/1Password",
-    ]
-
-    for password_dir in password_dirs:
-        if password_dir.exists():
-            shutil.rmtree(password_dir)
-            print(f"✓ Removed {password_dir}")
-
-    # Remove mise configurations
-    mise_dirs = [
-        home / ".config/mise",
-        home / ".local/share/mise",
-        home / ".cache/mise",
-    ]
-
-    for mise_dir in mise_dirs:
-        if mise_dir.exists():
-            shutil.rmtree(mise_dir)
-            print(f"✓ Removed {mise_dir}")
-
-
-def remove_broken_mise_shims():
-    """Remove npx wrappers in ~/.local/bin/ that depend on the removed mise.
-
-    Omarchy's `omarchy-npx-install` generates tiny bash scripts of the form:
-        #!/bin/bash
-        exec mise exec node@latest -- npx --yes <package> "$@"
-    Once mise is uninstalled (see remove_packages), these wrappers fail with
-    `mise: not found` and shadow real `npm i -g <pkg>` installs in /usr/bin/.
-
-    Detection is content-based to catch any wrappers (current and future)
-    without a hardcoded name list. Conservative match: small file + exact
-    wrapper signature, so user-authored scripts are left alone.
-    """
-    print("Removing broken mise-dependent shims from ~/.local/bin/...")
-
-    local_bin = Path.home() / ".local/bin"
-    if not local_bin.is_dir():
-        print("- ~/.local/bin not found, skipping")
-        return
-
-    signature = "exec mise exec node@latest -- npx"
-    removed = 0
-
-    for entry in sorted(local_bin.iterdir()):
-        if not entry.is_file() or entry.is_symlink():
-            continue
-        try:
-            if entry.stat().st_size >= 1024:
-                continue
-            if signature not in entry.read_text(errors="ignore"):
-                continue
-        except OSError:
-            continue
-        entry.unlink()
-        print(f"✓ Removed broken shim: {entry.name}")
-        removed += 1
-
-    if removed == 0:
-        print("- No broken mise shims found")
-
-
-def remove_system_asdcontrol():
-    """Remove system-installed asdcontrol components (NOT internal Omarchy files)
-
-    This removes the asdcontrol installation created by Omarchy's install/asdcontrol.sh,
-    which differs from the official asdcontrol installation method.
-    """
-    print("Removing system asdcontrol components...")
-
-    # Remove asdcontrol binary (installed by 'sudo make install')
-    asdcontrol_bin = Path("/usr/local/bin/asdcontrol")
-    if asdcontrol_bin.exists():
-        success = run_command("sudo rm -f /usr/local/bin/asdcontrol")
-        if success:
-            print("✓ Removed asdcontrol binary")
-        else:
-            print("! Failed to remove asdcontrol binary")
-    else:
-        print("- asdcontrol binary not found")
-
-    # Remove Omarchy's custom sudoers file (not part of official asdcontrol)
-    # Official asdcontrol uses udev rules instead of sudoers for permissions
-    try:
-        sudoers_file = Path("/etc/sudoers.d/asdcontrol")
-        if sudoers_file.exists():
-            success = run_command("sudo rm -f /etc/sudoers.d/asdcontrol")
-            if success:
-                print("✓ Removed Omarchy's asdcontrol sudoers file")
-            else:
-                print("! Failed to remove asdcontrol sudoers file")
-        else:
-            print("- asdcontrol sudoers file not found")
-    except PermissionError:
-        # Can't check if file exists due to permissions, try to remove anyway
-        print("- Cannot check asdcontrol sudoers file existence, attempting removal...")
-        success = run_command("sudo rm -f /etc/sudoers.d/asdcontrol")
-        if success:
-            print("✓ Removed Omarchy's asdcontrol sudoers file (if it existed)")
-        else:
-            print("- asdcontrol sudoers file not found or removal failed")
-
-    # Remove any udev rules that might have been created (official asdcontrol method)
-    udev_rules = [
-        "/etc/udev/rules.d/50-apple-xdr.rules",
-        "/etc/udev/rules.d/50-apple-studio.rules",
-    ]
-
-    for rule_file in udev_rules:
-        rule_path = Path(rule_file)
-        if rule_path.exists():
-            success = run_command(f"sudo rm -f {rule_file}")
-            if success:
-                print(f"✓ Removed udev rule: {rule_file}")
-            else:
-                print(f"! Failed to remove udev rule: {rule_file}")
-        else:
-            print(f"- udev rule not found: {rule_file}")
-
-    # Reload udev rules if any were removed
-    print("Reloading udev rules...")
-    success = run_command("sudo udevadm control --reload-rules")
-    if success:
-        print("✓ Reloaded udev rules")
-    else:
-        print("! Failed to reload udev rules")
-
-
-def manage_user_desktop_files():
-    """Manage desktop files in user applications directory ONLY"""
-    print("Managing .desktop files in user applications directory...")
-
-    home = Path.home()
-    user_apps = home / ".local/share/applications"
-
-    # Ensure user applications directory exists
-    user_apps.mkdir(parents=True, exist_ok=True)
-
-    # Remove unwanted desktop files from user directory
-    files_to_remove = [
-        "nvim.desktop",
-        "dropbox.desktop",
-        "Zoom.desktop",
-        "chromium.desktop",
-        "obsidian.desktop",
-        "signal-desktop.desktop",
-        "1password.desktop",
-        "1password-beta.desktop",
-        "Google Photos.desktop",
-    ]
-
-    for filename in files_to_remove:
-        file_path = user_apps / filename
-        if file_path.exists():
-            file_path.unlink()
-            print(f"✓ Removed {filename}")
-
-
-
-
-
-
-def create_nautilus_vscode_script():
-    """Create Nautilus script for opening files in VS Code or Cursor"""
-    print("Creating Nautilus script for VS Code/Cursor...")
-
-    # Create nautilus scripts directory if it doesn't exist
-    nautilus_scripts_dir = Path.home() / ".local/share/nautilus/scripts"
-    nautilus_scripts_dir.mkdir(parents=True, exist_ok=True)
-
-    script_content = """#!/bin/bash
-
-# Nautilus script to open selected files/directories in VS Code or Cursor
-
-# Check which editor command is available (prefer code over cursor)
-EDITOR_CMD=""
-if command -v code &> /dev/null; then
-    EDITOR_CMD="code"
-elif command -v cursor &> /dev/null; then
-    EDITOR_CMD="cursor"
-else
-    zenity --error --text="Neither VS Code (code) nor Cursor (cursor) command found. Please make sure at least one is installed and accessible from the command line."
-    exit 1
-fi
-
-# Get selected files from Nautilus
-# Nautilus provides selected files through environment variables
-IFS=$'\\n'
-if [ -n "$NAUTILUS_SCRIPT_SELECTED_FILE_PATHS" ]; then
-    # Use the file paths provided by Nautilus
-    selected_files=($(echo "$NAUTILUS_SCRIPT_SELECTED_FILE_PATHS"))
-elif [ -n "$NAUTILUS_SCRIPT_SELECTED_URIS" ]; then
-    # Convert URIs to file paths if needed
-    selected_files=()
-    for uri in $(echo "$NAUTILUS_SCRIPT_SELECTED_URIS"); do
-        # Remove file:// prefix and decode URI
-        file_path=$(echo "$uri" | sed 's|^file://||' | python3 -c "import sys, urllib.parse; print(urllib.parse.unquote(sys.stdin.read().strip()))")
-        selected_files+=("$file_path")
-    done
-else
-    zenity --error --text="No files selected."
-    exit 1
-fi
-
-# Open each selected file/directory in the available editor
-for file in "${selected_files[@]}"; do
-    if [ -e "$file" ]; then
-        $EDITOR_CMD "$file" &
-    fi
-done
-
-# Disown the background processes so they don't get killed when script exits
-disown
+BACKUP_SUFFIX = ".quattro-original"
+APPLIED_SUFFIX = ".quattro-applied"
+ABSENT_BACKUP_SENTINEL = "__OMARCHY_CUSTOMIZE_FILE_DID_NOT_EXIST__\n"
+REMOVED_SUFFIX = ".quattro-removed"
+
+
+REMOVE_PACKAGES = (
+    # Editor/development packages intentionally excluded from this setup.
+    # Keep lua51, cargo, clang, llvm, and gcc14 as explicit user choices.
+    "omarchy-nvim",
+    "neovim",
+    "nvim",
+    "luarocks",
+    "tree-sitter-cli",
+    "mariadb-libs",
+    "mise-bin",
+    "ruby",
+    "wl-clip-persist",
+    # Applications intentionally excluded from this setup. Both legacy and
+    # current names are harmless because omarchy-pkg-drop ignores missing ones.
+    "zoom",
+    "obsidian",
+    "obsidian-bin",
+    "signal-desktop",
+    "dropbox-cli",
+    "1password",
+    "1password-beta",
+    "1password-cli",
+    "localsend",
+    "localsend-bin",
+)
+
+REMOVE_FONT_PACKAGES = (
+    "noto-fonts-cjk",
+    "noto-fonts-extra",
+)
+
+INSTALL_PACKAGES = (
+    "nano",
+    "joplin-bin",
+    "ttf-liberation",
+)
+
+USER_DESKTOP_FILES = (
+    "nvim.desktop",
+    "dropbox.desktop",
+    "Zoom.desktop",
+    "chromium.desktop",
+    "obsidian.desktop",
+    "signal-desktop.desktop",
+    "1password.desktop",
+    "1password-beta.desktop",
+    "Google Photos.desktop",
+)
+
+REMOVE_WEBAPPS = (
+    "HEY",
+    "Basecamp",
+    "X",
+    "Google Photos",
+)
+
+WEBAPPS = (
+    (
+        "Gmail",
+        "https://mail.google.com",
+        "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/gmail.png",
+    ),
+    (
+        "Google Calendar",
+        "https://calendar.google.com",
+        "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/google-calendar.png",
+    ),
+    (
+        "Google AI",
+        "https://aistudio.google.com/",
+        "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/google-gemini.png",
+    ),
+)
+
+KEYD_CONFIG = """# === START OMARCHY CUSTOMIZATION ===
+# Mac-like modifier behavior.
+[ids]
+*
+
+[main]
+leftalt = layer(mac_control)
+leftcontrol = layer(alt)
+rightalt = layer(mac_control)
+rightcontrol = layer(alt)
+
+[mac_control:C]
+left = home
+right = end
+
+[alt:A]
+c = C-c
+# === END OMARCHY CUSTOMIZATION ===
 """
 
-    script_path = nautilus_scripts_dir / "open-in-vscode"
 
-    try:
-        script_path.write_text(script_content)
-        script_path.chmod(0o755)  # Make executable
-        print("✓ Created Nautilus script for VS Code/Cursor")
-    except Exception as e:
-        print(f"! Failed to create Nautilus script: {e}")
+class CustomizationError(RuntimeError):
+    """Raised when a customization cannot be applied safely."""
 
 
-def remove_webapps_from_user_space():
-    """Remove web app shortcuts using repo helper"""
-    print("Removing web app shortcuts from user directory...")
+class Customizer:
+    def __init__(
+        self,
+        *,
+        home: Path | None = None,
+        root: Path | None = None,
+        dry_run: bool = False,
+        assume_yes: bool = False,
+        skip_keyd: bool = False,
+    ) -> None:
+        self.home = (home or Path.home()).expanduser()
+        self.root = root or Path("/")
+        self.dry_run = dry_run
+        self.assume_yes = assume_yes
+        self.skip_keyd = skip_keyd
+        self.failures: list[str] = []
+        self.package_removals: dict[str, bool] = {}
 
-    webapps_to_remove = [
-        "HEY",
-        "Basecamp",
-        "X",
-    ]
+    def home_path(self, relative: str) -> Path:
+        return self.home / relative
 
-    for webapp_name in webapps_to_remove:
-        success = run_command(f"~/.local/share/omarchy/bin/omarchy-webapp-remove '{webapp_name}'")
-        if success:
-            print(f"✓ Removed {webapp_name}")
-        else:
-            print(f"- {webapp_name} not found or already removed")
+    def system_path(self, absolute: str) -> Path:
+        return self.root / absolute.lstrip("/")
 
+    def run(self, *command: str, quiet: bool = False) -> bool:
+        """Run a command directly, without the legacy Omarchy Bash checkout."""
+        rendered = shlex.join(command)
+        print(f"$ {rendered}")
+        if self.dry_run:
+            return True
 
-def create_webapps():
-    """Create web apps using web2app"""
-    print("Creating web apps...")
+        try:
+            if quiet:
+                result = subprocess.run(
+                    command,
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                result = subprocess.run(command, check=False)
+        except FileNotFoundError:
+            print(f"! Command not found: {command[0]}")
+            return False
+        return result.returncode == 0
 
-    webapps = [
-        {
-            "name": "Gmail",
-            "url": "https://mail.google.com",
-            "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/gmail.png",
-        },
-        {
-            "name": "Google Calendar",
-            "url": "https://calendar.google.com",
-            "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/google-calendar.png",
-        },
-        {
-            "name": "Google AI",
-            "url": "https://aistudio.google.com/",
-            "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/google-gemini.png",
-        },
-    ]
+    def require_quattro(self) -> None:
+        """Refuse to run against a legacy or half-upgraded installation."""
+        if self.dry_run:
+            return
+        if os.geteuid() == 0 and self.root == Path("/"):
+            raise CustomizationError(
+                "Do not run customize.py as root; it invokes sudo only for the "
+                "specific system operations that need it."
+            )
 
-    # Use repo helper which integrates with this setup
-    for app in webapps:
-        success = run_command(
-            f'~/.local/share/omarchy/bin/omarchy-webapp-install "{app["name"]}" "{app["url"]}" "{app["icon"]}"'
+        omarchy_root = self.system_path("/usr/share/omarchy")
+        required = (
+            omarchy_root / "config/hypr/hyprland.lua",
+            omarchy_root / "shell/shell.qml",
+            self.home_path(".config/hypr/hyprland.lua"),
+            self.home_path(".config/omarchy/shell.json"),
         )
-        if success:
-            print(f"✓ Created {app['name']} web app")
+        missing = [str(path) for path in required if not path.exists()]
+        if shutil.which("omarchy") is None:
+            missing.append("omarchy command in PATH")
+        if not missing and not self.run("omarchy-shell", "shell", "ping", quiet=True):
+            missing.append("responsive Quattro shell (reboot into the Quattro desktop)")
+        if missing:
+            details = "\n  - ".join(missing)
+            raise CustomizationError(
+                "Omarchy Quattro is not fully installed. Run the official "
+                "'omarchy upgrade to quattro' flow, reboot, and retry. Missing:\n"
+                f"  - {details}"
+            )
+
+    @staticmethod
+    def report_unsupported_legacy_preferences() -> None:
+        print("\nQuattro compatibility notes:")
+        print(
+            "- Ghostty-specific persistent notification timeouts are not applied: "
+            "Quattro has notification history but no supported per-app timeout override."
+        )
+        print(
+            "- Apple-display brightness support is preserved: Quattro owns asdcontrol "
+            "and has no supported Apple-only disable switch."
+        )
+        print(
+            "- PLAYWRIGHT_CHROMIUM_ARGS is not a Playwright-supported global setting; "
+            "set Wayland flags in each project's launchOptions.args instead."
+        )
+        print(
+            "- Selectively removed bundled launchers and mise wrappers can be "
+            "recreated by a future omarchy-refresh-applications run; rerun this "
+            "script if they reappear."
+        )
+
+    def backup(self, path: Path) -> Path | None:
+        """Create one stable pre-customization backup for a file."""
+        if not path.exists():
+            return None
+
+        backup = path.with_name(path.name + BACKUP_SUFFIX)
+        if backup.exists():
+            try:
+                was_absent = backup.read_text() == ABSENT_BACKUP_SENTINEL
+            except (OSError, UnicodeDecodeError):
+                was_absent = False
+            if was_absent:
+                if self.dry_run:
+                    print(f"- Would replace absence marker with backup of {path}")
+                    return backup
+                shutil.copy2(path, backup)
+                print(f"✓ Replaced absence marker with backup of {path}")
+                return backup
+            print(f"- Backup already exists: {backup}")
+            return backup
+        if self.dry_run:
+            print(f"- Would back up {path} to {backup}")
+            return backup
+
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, backup)
+        print(f"✓ Backed up {path} to {backup}")
+        return backup
+
+    def record_applied(self, path: Path, *, absent: bool = False) -> None:
+        if self.dry_run:
+            return
+        applied = path.with_name(path.name + APPLIED_SUFFIX)
+        applied.write_text(ABSENT_BACKUP_SENTINEL if absent else path.read_text())
+
+    @staticmethod
+    def _comment_prefix(path: Path) -> str:
+        return "--" if path.suffix == ".lua" else "#"
+
+    def upsert_fenced(self, path: Path, lines: Iterable[str], label: str) -> bool:
+        """Insert or replace one owned section while preserving the rest."""
+        prefix = self._comment_prefix(path)
+        start = f"{prefix} === START {label} ==="
+        end = f"{prefix} === END {label} ==="
+        body = "\n".join(lines).rstrip()
+        replacement = f"{start}\n{body}\n{end}"
+        current = path.read_text() if path.exists() else ""
+
+        has_start = start in current
+        has_end = end in current
+        if has_start != has_end:
+            print(f"! Refusing to edit {path}: incomplete {label} fence")
+            return False
+
+        if has_start:
+            pattern = re.compile(rf"(?ms)^{re.escape(start)}$.*?^{re.escape(end)}$")
+            updated, count = pattern.subn(replacement, current, count=1)
+            if count != 1:
+                print(f"! Could not uniquely replace {label} in {path}")
+                return False
         else:
-            print(f"! Failed to create {app['name']} web app")
+            separator = (
+                "" if not current else ("" if current.endswith("\n\n") else "\n")
+            )
+            updated = f"{current}{separator}{replacement}\n"
 
+        if updated == current:
+            print(f"- {label} already current in {path}")
+            return True
+        if self.dry_run:
+            print(f"- Would update {label} in {path}")
+            return True
 
-def customize_bash_config():
-    """Add bash customizations to user's .bashrc with backup and fencing"""
-    print("Adding bash customizations to ~/.bashrc...")
+        self.backup(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(updated)
+        print(f"✓ Updated {label} in {path}")
+        return True
 
-    home = Path.home()
-    bashrc_path = home / ".bashrc"
+    def install_chrome(self) -> None:
+        """Use Quattro's installer so flags, policies, and extensions stay intact."""
+        print("\nInstalling and selecting Google Chrome...")
+        if not self.run("omarchy-install-browser", "chrome"):
+            self.failures.append("Google Chrome installation")
+            return
+        if not self.run("omarchy-default-browser", "chrome"):
+            self.failures.append("Google Chrome default selection")
+            return
 
-    # Create backup before editing
-    backup_file_before_edit(bashrc_path)
+        self.remove_legacy_chrome_desktop_override()
 
-    customizations = [
-        'export EDITOR="nano"',
-        'export SUDO_EDITOR="$EDITOR"',
-        "alias e='nano'",
-        "alias open='xdg-open'",
-        "alias c='claude --allow-dangerously-skip-permissions'",
-        "alias cx='codex --ask-for-approval on-request -c '\\''approvals_reviewer=\"auto_review\"'\\'''",
-        "alias ter='codex --ask-for-approval on-request -c '\\''approvals_reviewer=\"auto_review\"'\\'' -m gpt-5.6-terra -c '\\''model_reasoning_effort=\"medium\"'\\'''",
-        # Add code function for cursor with Alacritty auto-close
-        "code() {",
-        "    /usr/bin/code \"$@\" &",
-        "    if [[ \"$(ps -o comm= -p $PPID 2>/dev/null)\" =~ ^(alacritty|ghostty)$ ]]; then",
-        "        sleep 0.5",
-        "        kill $PPID 2>/dev/null",
-        "    fi",
-        "}",
-        "",
-        "# Only set bind commands in interactive shells",
-        "if [[ $- == *i* ]]; then",
-        "    # First Tab lists all matches",
-        "    bind 'set show-all-if-ambiguous on'",
-        "",
-        "    # Second Tab (after showing list) begins menu completion",
-        "    bind '\"\\t\":menu-complete'",
-        "    bind 'set menu-complete-display-prefix on'   # optional, shows common prefix while cycling",
-        "fi",
-        "",
-        "# Enable bash-completion",
-        "if [ -f /usr/share/bash-completion/bash_completion ]; then",
-        "    source /usr/share/bash-completion/bash_completion",
-        "fi",
-    ]
+        # Remove Chromium only after Chrome is installed and selected.
+        if not self.run("omarchy-pkg-drop", "chromium"):
+            self.failures.append("Chromium removal")
 
+    def remove_legacy_chrome_desktop_override(self) -> None:
+        """Stop the v3 customization from shadowing Quattro's launcher."""
+        path = self.home_path(".local/share/applications/google-chrome.desktop")
+        if not path.exists():
+            return
 
-    # Use fenced content addition
-    success = add_fenced_content_to_file(
-        bashrc_path, customizations, "BASH CUSTOMIZATIONS"
-    )
+        old_signature = (
+            "google-chrome-stable --ozone-platform=wayland "
+            "--ozone-platform-hint=wayland "
+            "--enable-features=TouchpadOverscrollHistoryNavigation"
+        )
+        try:
+            owned = old_signature in path.read_text()
+        except OSError as error:
+            print(f"! Could not inspect legacy Chrome launcher {path}: {error}")
+            self.failures.append("inspect legacy Chrome desktop override")
+            return
+        if not owned:
+            print(f"- Preserving non-customize.py Chrome launcher: {path}")
+            return
+        if self.dry_run:
+            print(f"- Would remove legacy Chrome launcher {path}")
+            return
 
-    if success:
-        print("✓ Bash customizations added with fencing")
-    else:
-        print("! Failed to add bash customizations")
-    return success
+        self.backup(path)
+        path.unlink()
+        self.record_applied(path, absent=True)
+        print(f"✓ Removed legacy Chrome launcher {path}")
 
+    def manage_packages(self) -> bool:
+        # Keep the current editor stack until Nano is installed. Install
+        # joplin-bin directly: yay/pacman resolves its joplin-appimage conflict
+        # in one package transaction, so a failed build leaves the old app intact.
+        print("\nInstalling preferred packages...")
+        nano_ready = False
+        for package in INSTALL_PACKAGES:
+            installer = (
+                "omarchy-pkg-aur-add" if package == "joplin-bin" else "omarchy-pkg-add"
+            )
+            if self.run(installer, package):
+                print(f"✓ Installed or retained {package}")
+                if package == "nano":
+                    nano_ready = True
+            else:
+                self.failures.append(f"install {package}")
 
-def customize_ssh_ghostty_truecolor():
-    """Advertise Ghostty truecolor support in SSH sessions.
+        if nano_ready:
+            nano_ready = self.configure_default_editor()
 
-    OpenSSH forwards TERM automatically but does not normally forward
-    COLORTERM. Codex therefore treats xterm-ghostty as a basic ANSI terminal
-    and omits richer UI styling such as user-message backgrounds.
-    """
-    print("Configuring truecolor support for Ghostty SSH sessions...")
+        print("\nRemoving excluded packages...")
+        removals = tuple(
+            package
+            for package in REMOVE_PACKAGES
+            if nano_ready or package not in {"omarchy-nvim", "neovim", "nvim"}
+        )
+        if not nano_ready:
+            print("! Preserving Neovim because Nano did not install successfully")
+        for package in (*removals, *REMOVE_FONT_PACKAGES):
+            removed = self.run("omarchy-pkg-drop", package)
+            self.package_removals[package] = removed
+            if removed:
+                print(f"✓ Removed or confirmed absent: {package}")
+            else:
+                self.failures.append(f"remove {package}")
+        return nano_ready
 
-    bashrc_path = Path.home() / ".bashrc"
-    backup_file_before_edit(bashrc_path)
+    def remove_mise_wrappers(self) -> None:
+        """Drop the mise shims Quattro writes over native agent CLIs.
 
-    success = add_fenced_content_to_file(
-        bashrc_path,
-        [
+        install/user/mise.sh (run by omarchy-refresh-applications during the
+        upgrade) replaces ~/.local/bin/claude, codex, and friends with wrappers
+        that exec through mise. Without mise-bin those wrappers only fail, so
+        remove them and relink the native installs where they still exist.
+        """
+        print("\nRemoving mise wrappers left in ~/.local/bin...")
+        if not self.package_removals.get("mise-bin", False):
+            print("! Preserving mise wrappers because mise-bin was not removed")
+            return
+
+        local_bin = self.home_path(".local/bin")
+        removed: list[str] = []
+        if local_bin.is_dir():
+            for path in sorted(local_bin.iterdir()):
+                if not path.is_file() or path.is_symlink():
+                    continue
+                try:
+                    content = path.read_text()
+                except (OSError, UnicodeDecodeError):
+                    continue
+                if "mise use -g" not in content or "exec mise x" not in content:
+                    continue
+                if self.dry_run:
+                    print(f"- Would remove mise wrapper {path}")
+                else:
+                    path.unlink()
+                    print(f"✓ Removed mise wrapper {path}")
+                removed.append(path.name)
+
+        for name, target, hint in (
+            ("claude", self._native_claude(), "curl -fsSL https://claude.ai/install.sh | bash"),
+            ("codex", self._native_codex(), "npm install -g @openai/codex"),
+        ):
+            if name not in removed:
+                continue
+            link = local_bin / name
+            if target is None:
+                print(f"! No native {name} install found; reinstall with: {hint}")
+                self.failures.append(f"relink native {name}")
+                continue
+            if self.dry_run:
+                print(f"- Would link {link} -> {target}")
+                continue
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(target)
+            print(f"✓ Linked {link} -> {target}")
+
+    def _native_claude(self) -> Path | None:
+        versions = self.home_path(".local/share/claude/versions")
+        if not versions.is_dir():
+            return None
+
+        def version_key(path: Path) -> tuple[int, ...]:
+            parts = re.findall(r"\d+", path.name)
+            return tuple(int(part) for part in parts)
+
+        candidates = [path for path in versions.iterdir() if path.is_file()]
+        if not candidates:
+            return None
+        return max(candidates, key=version_key)
+
+    def _native_codex(self) -> Path | None:
+        codex = self.home_path(".codex/packages/standalone/current/bin/codex")
+        return codex if codex.exists() else None
+
+    def configure_default_editor(self) -> bool:
+        """Keep Omarchy's config editor usable after removing Neovim."""
+        print("\nSelecting Nano as Omarchy's default editor...")
+        if not self.run("omarchy-cmd-present", "nano", quiet=True):
+            self.failures.append("select Nano as default editor")
+            return False
+
+        editor_file = self.home_path(".local/state/omarchy/defaults/editor")
+        current = editor_file.read_text() if editor_file.exists() else ""
+        updated = "nano\n"
+        if current == updated:
+            print("- Nano is already Omarchy's default editor")
+            return True
+        if self.dry_run:
+            print(f"- Would select Nano in {editor_file}")
+            return True
+
+        editor_file.parent.mkdir(parents=True, exist_ok=True)
+        if editor_file.exists():
+            self.backup(editor_file)
+        else:
+            backup = editor_file.with_name(editor_file.name + BACKUP_SUFFIX)
+            backup.write_text(ABSENT_BACKUP_SENTINEL)
+            print(f"✓ Recorded that {editor_file} did not previously exist")
+        editor_file.write_text(updated)
+        self.record_applied(editor_file)
+        print(f"✓ Selected Nano in {editor_file}")
+        return True
+
+    def remove_user_config_directories(self) -> None:
+        print("\nRemoving configs for excluded applications...")
+        groups = (
+            (
+                "Neovim",
+                ("omarchy-nvim", "neovim", "nvim"),
+                (
+                    ".config/nvim",
+                    ".local/share/nvim",
+                    ".local/state/nvim",
+                    ".cache/nvim",
+                ),
+            ),
+            (
+                "1Password",
+                ("1password", "1password-beta", "1password-cli"),
+                (
+                    ".config/1Password",
+                    ".local/share/1Password",
+                    ".cache/1Password",
+                    ".ssh/1Password",
+                ),
+            ),
+        )
+
+        for name, packages, paths in groups:
+            if not all(
+                self.package_removals.get(package, False) for package in packages
+            ):
+                print(
+                    f"! Preserving {name} data because package removal did not "
+                    "fully succeed"
+                )
+                continue
+            for relative in paths:
+                path = self.home_path(relative)
+                if not path.exists():
+                    continue
+                if self.dry_run:
+                    print(f"- Would quarantine {path}")
+                    continue
+                quarantine = path.with_name(path.name + REMOVED_SUFFIX)
+                if quarantine.exists():
+                    print(
+                        f"! Preserving {path}: quarantine already exists at "
+                        f"{quarantine}"
+                    )
+                    self.failures.append(f"quarantine {path}")
+                    continue
+                path.rename(quarantine)
+                print(f"✓ Quarantined {path} as {quarantine}")
+
+    def manage_desktop_entries(self) -> None:
+        print("\nManaging user desktop entries and web apps...")
+        user_apps = self.home_path(".local/share/applications")
+        if not self.dry_run:
+            user_apps.mkdir(parents=True, exist_ok=True)
+
+        for filename in USER_DESKTOP_FILES:
+            path = user_apps / filename
+            if not path.exists():
+                continue
+            if self.dry_run:
+                print(f"- Would remove {path}")
+            else:
+                path.unlink()
+                print(f"✓ Removed {path}")
+
+        for name in REMOVE_WEBAPPS:
+            if not self.run("omarchy-webapp-remove", name, quiet=True):
+                self.failures.append(f"remove web app {name}")
+
+        for name, url, icon in WEBAPPS:
+            if not self.run("omarchy-webapp-install", name, url, icon):
+                self.failures.append(f"create web app {name}")
+
+    def create_nautilus_vscode_script(self) -> None:
+        print("\nCreating Nautilus open-in-editor script...")
+        script_path = self.home_path(".local/share/nautilus/scripts/open-in-vscode")
+        content = """#!/bin/bash
+# Managed by customize.py for Omarchy Quattro.
+set -e
+
+if command -v code >/dev/null 2>&1; then
+  editor=(code)
+elif command -v cursor >/dev/null 2>&1; then
+  editor=(cursor)
+else
+  zenity --error --text="Neither VS Code nor Cursor is installed."
+  exit 1
+fi
+
+selected=${NAUTILUS_SCRIPT_SELECTED_FILE_PATHS:-}
+if [[ -z $selected ]]; then
+  zenity --error --text="No local files selected."
+  exit 1
+fi
+
+while IFS= read -r file; do
+  [[ -n $file && -e $file ]] && "${editor[@]}" "$file"
+done <<< "$selected"
+"""
+        current = script_path.read_text() if script_path.exists() else ""
+        if current == content:
+            print(f"- Nautilus script already current: {script_path}")
+            return
+        if self.dry_run:
+            print(f"- Would write {script_path}")
+            return
+
+        self.backup(script_path)
+        script_path.parent.mkdir(parents=True, exist_ok=True)
+        script_path.write_text(content)
+        script_path.chmod(0o755)
+        self.record_applied(script_path)
+        print(f"✓ Wrote {script_path}")
+
+    def customize_bash(self) -> None:
+        print("\nConfiguring Bash...")
+        lines = (
+            'export EDITOR="nano"',
+            'export SUDO_EDITOR="$EDITOR"',
+            "alias e='nano'",
+            "alias open='xdg-open'",
+            "alias c='claude --allow-dangerously-skip-permissions'",
+            "alias cx='codex --ask-for-approval on-request -c '\"'\"'approvals_reviewer=\"auto_review\"'\"'\"''",
+            "alias ter='codex --ask-for-approval on-request -c '\"'\"'approvals_reviewer=\"auto_review\"'\"'\"' -m gpt-5.6-terra -c '\"'\"'model_reasoning_effort=\"medium\"'\"'\"''",
+            "",
+            "code() {",
+            '  /usr/bin/code "$@" &',
+            '  if [[ $(ps -o comm= -p "$PPID" 2>/dev/null) =~ ^(alacritty|foot|ghostty)$ ]]; then',
+            "    sleep 0.5",
+            '    kill "$PPID" 2>/dev/null',
+            "  fi",
+            "}",
+            "",
+            "if [[ $- == *i* ]]; then",
+            "  bind 'set show-all-if-ambiguous on'",
+            "  bind '\"\\t\":menu-complete'",
+            "  bind 'set menu-complete-display-prefix on'",
+            "fi",
+        )
+        if not self.upsert_fenced(
+            self.home_path(".bashrc"), lines, "BASH CUSTOMIZATIONS"
+        ):
+            self.failures.append("Bash customizations")
+
+    def customize_ssh_ghostty_truecolor(self) -> None:
+        lines = (
             'if [[ -n ${SSH_TTY:-} && ${TERM:-} == "xterm-ghostty" ]]; then',
             '  export COLORTERM="truecolor"',
             "fi",
-        ],
-        "GHOSTTY SSH TRUECOLOR",
-    )
-
-    if success:
-        print("✓ Ghostty SSH sessions now advertise truecolor support")
-    else:
-        print("! Failed to configure Ghostty SSH truecolor support")
-    return success
-
-
-def update_user_hypridle_config():
-    """Update user hypridle configuration with backup and fencing"""
-    print("Updating user hypridle configuration...")
-
-    home = Path.home()
-    hypridle_conf = home / ".config/hypr/hypridle.conf"
-
-    if not hypridle_conf.exists():
-        print("! ~/.config/hypr/hypridle.conf not found, skipping")
-        return
-
-    # Create backup before editing
-    backup_file_before_edit(hypridle_conf)
-
-    idle_customizations = [
-        "listener {",
-        "    timeout = 900",
-        "    on-timeout = systemctl suspend",
-        "}"
-    ]
-
-    # Use fenced content addition
-    success = add_fenced_content_to_file(
-        hypridle_conf, idle_customizations, "HYPRIDLE CUSTOMIZATIONS"
-    )
-
-    if success:
-        print("✓ Hypridle customizations added with fencing")
-    else:
-        print("! Failed to add hypridle customizations")
-    return success
-
-
-def update_user_hyprland_config():
-    """Update user hyprland configuration with backup and fencing"""
-    print("Updating user hyprland configuration...")
-
-    home = Path.home()
-    hypr_dir = home / ".config/hypr"
-    
-    # Check if hyprland config directory exists
-    if not hypr_dir.exists():
-        print("! ~/.config/hypr/ directory not found, skipping")
-        return False
-
-    # Define configurations for each file
-    config_files = {
-        "bindings.conf": [
-            "unbind = CTRL, F1",
-            "unbind = CTRL, F2",
-            "unbind = SHIFT CTRL, F2",
-            "bind = SUPER SHIFT, J, exec, joplin-desktop",
-            "bind = CTRL SHIFT, C, exec, omarchy-launch-walker -m clipboard",
-            "bind = SUPER, E, fullscreen, 1",
-            "bind = SUPER SHIFT, E, resizeactive, 67% 0",
-            "bind = CTRL SHIFT, 4, exec, ~/.local/share/omarchy/bin/omarchy-cmd-screenshot",
-            "bind = CTRL SHIFT, 3, exec, omarchy-menu screenrecord",
-        ],
-        "envs.conf": [
-            'env = CHROME_FLAGS,"--enable-features=UseOzonePlatform --ozone-platform=wayland --gtk-version=4"',
-            'env = PLAYWRIGHT_CHROMIUM_ARGS,"--enable-features=UseOzonePlatform --ozone-platform=wayland"',
-        ],
-        "input.conf": [
-            "input { \n  kb_layout = us,il \n  kb_options = grp:caps_toggle \n scroll_factor = 1.2\n}",
-        ],
-    }
-
-    # Window rules and misc settings go to main hyprland.conf
-    hyprland_conf = hypr_dir / "hyprland.conf"
-    main_config = [
-        "windowrule = opacity 1 1, match:class .*",
-        "misc {",
-        "  on_focus_under_fullscreen = 2",
-        "}",
-    ]
-
-    all_success = True
-
-    # Update specific config files
-    for config_file, customizations in config_files.items():
-        config_path = hypr_dir / config_file
-        
-        # Create backup if file exists
-        if config_path.exists():
-            backup_file_before_edit(config_path)
-        
-        # Add customizations to file
-        success = add_fenced_content_to_file(
-            config_path, customizations, f"OMARCHY {config_file.upper()} CUSTOMIZATIONS"
         )
-        
-        if success:
-            print(f"✓ {config_file} customizations added")
-        else:
-            print(f"! Failed to add {config_file} customizations")
-            all_success = False
+        if not self.upsert_fenced(
+            self.home_path(".bashrc"), lines, "GHOSTTY SSH TRUECOLOR"
+        ):
+            self.failures.append("Ghostty SSH truecolor")
 
-    # Update main hyprland.conf with window rules and misc settings
-    if hyprland_conf.exists():
-        backup_file_before_edit(hyprland_conf)
-        
-        success = add_fenced_content_to_file(
-            hyprland_conf, main_config, "OMARCHY HYPRLAND CUSTOMIZATIONS"
+    def customize_hyprland(self) -> None:
+        print("\nWriting Quattro Hyprland Lua overrides...")
+        bindings = (
+            # Only keys Omarchy 4 still binds by default need unbinding first.
+            'hl.unbind("SUPER + SHIFT + E")',
+            'hl.unbind("SUPER + SHIFT + G")',
+            'hl.unbind("SUPER + SHIFT + O")',
+            'hl.unbind("SUPER + SHIFT + SLASH")',
+            'hl.unbind("SUPER + SHIFT + C")',
+            'hl.unbind("SUPER + SHIFT + ALT + E")',
+            'hl.unbind("SUPER + SHIFT + P")',
+            'hl.unbind("SUPER + SHIFT + X")',
+            'hl.unbind("SUPER + SHIFT + ALT + X")',
+            "",
+            'o.bind("SUPER + SHIFT + J", "Joplin", "joplin-desktop")',
+            'o.bind("CTRL + SHIFT + C", "Clipboard manager", "omarchy-shell shell toggle omarchy.clipboard")',
+            'o.bind("SUPER + E", "Full width", hl.dsp.window.fullscreen({ mode = "maximized" }))',
+            'o.bind("SUPER + SHIFT + E", "Resize active window", "hyprctl dispatch resizeactive 67% 0")',
+            'o.bind("CTRL + SHIFT + code:13", "Screenshot", "omarchy-capture-screenshot")',
+            'o.bind("CTRL + SHIFT + code:12", "Screenrecording", "omarchy-capture-screenrecording --stop-recording || omarchy-menu toggle trigger.capture.screenrecord")',
         )
-        
-        if success:
-            print("✓ Main hyprland.conf customizations added")
-        else:
-            print("! Failed to add main hyprland.conf customizations")
-            all_success = False
-    else:
-        print("! ~/.config/hypr/hyprland.conf not found, skipping main config")
-        all_success = False
+        input_config = (
+            "hl.config({",
+            "  input = {",
+            '    kb_layout = "us,il",',
+            '    kb_options = "grp:caps_toggle",',
+            "    touchpad = {",
+            "      scroll_factor = 1.2,",
+            "    },",
+            "  },",
+            "})",
+        )
+        looknfeel = (
+            "hl.config({",
+            "  misc = {",
+            "    on_focus_under_fullscreen = 2,",
+            "  },",
+            "})",
+            "",
+            "-- Omarchy tags windows default-opacity and sets 0.985/0.96 on the tag;",
+            "-- apps that opt out of the tag keep their own opacity.",
+            'o.window({ tag = "default-opacity" }, { opacity = "1 1" })',
+        )
 
-    return all_success
+        configs = (
+            (".config/hypr/bindings.lua", bindings, "OMARCHY BINDING CUSTOMIZATIONS"),
+            (".config/hypr/input.lua", input_config, "OMARCHY INPUT CUSTOMIZATIONS"),
+            (".config/hypr/looknfeel.lua", looknfeel, "OMARCHY LOOK CUSTOMIZATIONS"),
+        )
+        for relative, lines, label in configs:
+            if not self.upsert_fenced(self.home_path(relative), lines, label):
+                self.failures.append(label)
 
+    def customize_terminal_paste(self) -> None:
+        print("\nConfiguring terminal paste behavior...")
+        alacritty = self.home_path(".config/alacritty/alacritty.toml")
+        if alacritty.exists():
+            current = alacritty.read_text()
+            updated = current
+            binding = '{ key = "V", mods = "Control", action = "Paste" },'
+            if binding not in updated:
+                bindings_pattern = re.compile(
+                    r"(?m)^(?P<prefix>\s*(?:keyboard\.)?bindings\s*=\s*)\["
+                )
+                if bindings_pattern.search(updated):
+                    updated = bindings_pattern.sub(
+                        lambda match: f"{match.group(0)}\n{binding}", updated, count=1
+                    )
+                elif "[keyboard]" in updated:
+                    updated = updated.replace(
+                        "[keyboard]", f"[keyboard]\nbindings = [\n{binding}\n]", 1
+                    )
+                else:
+                    updated += f"\n[keyboard]\nbindings = [\n{binding}\n]\n"
 
+            selection_pattern = re.compile(
+                r"(?m)^(?P<prefix>\s*(?:selection\.)?save_to_clipboard\s*=).*$"
+            )
+            if selection_pattern.search(updated):
+                updated = selection_pattern.sub(
+                    lambda match: f"{match.group('prefix')} true", updated, count=1
+                )
+            elif re.search(r"(?m)^\s*selection\s*=\s*\{", updated):
+                inline_selection = re.compile(
+                    r"(?m)^(?P<prefix>\s*selection\s*=\s*\{)(?P<body>[^}]*)"
+                    r"(?P<suffix>\}\s*(?:#.*)?)$"
+                )
 
+                def update_inline_selection(match: re.Match[str]) -> str:
+                    body = match.group("body")
+                    property_pattern = re.compile(r"save_to_clipboard\s*=\s*[^,]+")
+                    if property_pattern.search(body):
+                        body = property_pattern.sub(
+                            "save_to_clipboard = true", body, count=1
+                        )
+                    else:
+                        separator = ", " if body.strip() else ""
+                        body = f"{body.rstrip()}{separator}save_to_clipboard = true "
+                    return f"{match.group('prefix')}{body}{match.group('suffix')}"
 
-def customize_terminal_paste():
-    """Mac-style Ctrl+V paste and selection auto-copy in Alacritty/Ghostty.
-
-    Why: keyd remaps physical Alt to Ctrl globally so Mac-style Cmd+V works
-    in GUI apps. Terminals don't bind Ctrl+V to paste by default (readline
-    treats it as "verbatim insert"), so the keyd remap silently fails inside
-    terminals. Selecting text also doesn't auto-copy in Ghostty by default.
-
-    Note: Ctrl+C copy can't be added symmetrically — it would break SIGINT
-    (keyd makes Alt+C and Ctrl+C indistinguishable to the terminal). Selection
-    auto-copy plus Ctrl+Shift+C is the workable substitute for Mac's Cmd+C.
-    """
-    print("Configuring terminal Mac-style copy/paste...")
-
-    home = Path.home()
-    all_ok = True
-
-    # Alacritty (TOML — modify in place)
-    alacritty_conf = home / ".config/alacritty/alacritty.toml"
-    if alacritty_conf.exists():
-        backup_file_before_edit(alacritty_conf)
-        content = alacritty_conf.read_text()
-        changed = False
-
-        # Ctrl+V paste
-        new_binding = '{ key = "V", mods = "Control", action = "Paste" },'
-        if new_binding in content:
-            print("- Alacritty Ctrl+V binding already present")
-        else:
-            marker = "bindings = ["
-            if marker in content:
-                content = content.replace(marker, f"{marker}\n{new_binding}", 1)
-                changed = True
-                print("✓ Added Ctrl+V paste binding to Alacritty")
+                updated = inline_selection.sub(
+                    update_inline_selection, updated, count=1
+                )
+            elif "[selection]" in updated:
+                updated = updated.replace(
+                    "[selection]", "[selection]\nsave_to_clipboard = true", 1
+                )
             else:
-                print("! Could not find bindings array in Alacritty config")
-                all_ok = False
+                updated += "\n[selection]\nsave_to_clipboard = true\n"
+            self._write_updated(alacritty, current, updated, "Alacritty paste")
 
-        # Selection auto-copy — Alacritty default is `save_to_clipboard = true`
-        # already in user config; verify and only add if missing.
-        if "save_to_clipboard = true" in content:
-            print("- Alacritty selection auto-copy already enabled")
-        else:
-            content += '\n[selection]\nsave_to_clipboard = true\n'
-            changed = True
-            print("✓ Enabled selection auto-copy in Alacritty")
-
-        if changed:
-            alacritty_conf.write_text(content)
-    else:
-        print("- Alacritty config not found, skipping")
-
-    # Ghostty (line-based — fenced append covers both binding and copy-on-select)
-    ghostty_conf = home / ".config/ghostty/config"
-    if ghostty_conf.exists():
-        backup_file_before_edit(ghostty_conf)
-        success = add_fenced_content_to_file(
-            ghostty_conf,
-            [
+        ghostty = self.home_path(".config/ghostty/config")
+        if ghostty.exists() and not self.upsert_fenced(
+            ghostty,
+            (
                 "keybind = ctrl+v=paste_from_clipboard",
                 "copy-on-select = clipboard",
-            ],
+            ),
             "OMARCHY GHOSTTY CUSTOMIZATIONS",
-        )
-        if success:
-            print("✓ Added Ctrl+V paste + copy-on-select to Ghostty")
-        else:
-            print("! Failed to add Ghostty customizations")
-            all_ok = False
-    else:
-        print("- Ghostty config not found, skipping")
+        ):
+            self.failures.append("Ghostty paste")
 
-    return all_ok
+        foot = self.home_path(".config/foot/foot.ini")
+        if foot.exists():
+            current = foot.read_text()
+            updated, count = re.subn(
+                r"(?m)^clipboard-paste=.*$",
+                "clipboard-paste=Control+v Shift+Insert Control+Shift+v XF86Paste",
+                current,
+                count=1,
+            )
+            if count == 0:
+                binding = (
+                    "clipboard-paste=Control+v Shift+Insert Control+Shift+v XF86Paste"
+                )
+                if "[key-bindings]" in current:
+                    updated = current.replace(
+                        "[key-bindings]", f"[key-bindings]\n{binding}", 1
+                    )
+                else:
+                    updated = f"{current.rstrip()}\n\n[key-bindings]\n{binding}\n"
+                self._write_updated(foot, current, updated, "Foot paste")
+            else:
+                self._write_updated(foot, current, updated, "Foot paste")
 
-
-def customize_ghostty_mac_keys():
-    """Mac-style tabs and splits in Ghostty (iTerm2 conventions).
-
-    Adds Ctrl+T new tab, Ctrl+W close, Ctrl+D split right, Ctrl+Shift+D
-    split down, plus Ctrl+1..9 tab jumps and Ctrl+Shift+[ / ] tab cycle.
-    Kept in a separate fenced block from the paste customizations so this
-    can be added independently on re-runs.
-
-    Note: these bindings shadow the shell's Ctrl+T (transpose), Ctrl+W
-    (delete-word), and Ctrl+D (EOF) inside Ghostty. Acceptable trade-off
-    for the Mac-like feel; Ctrl+Shift+C/V still copy/paste.
-    """
-    print("Configuring Ghostty Mac-style tabs/splits...")
-
-    home = Path.home()
-    ghostty_conf = home / ".config/ghostty/config"
-    if not ghostty_conf.exists():
-        print("- Ghostty config not found, skipping")
-        return True
-
-    backup_file_before_edit(ghostty_conf)
-    success = add_fenced_content_to_file(
-        ghostty_conf,
-        [
-            "# macOS-style tabs and splits",
+    def customize_ghostty_mac_keys(self) -> None:
+        ghostty = self.home_path(".config/ghostty/config")
+        if not ghostty.exists():
+            print("- Ghostty config not found; skipping Ghostty tab bindings")
+            return
+        lines = (
             "keybind = ctrl+t=new_tab",
             "keybind = ctrl+w=close_surface",
             "keybind = ctrl+d=new_split:right",
@@ -849,745 +805,160 @@ def customize_ghostty_mac_keys():
             "keybind = ctrl+seven=goto_tab:7",
             "keybind = ctrl+eight=goto_tab:8",
             "keybind = ctrl+nine=goto_tab:9",
-        ],
-        "OMARCHY GHOSTTY MAC TABS",
-    )
-    if success:
-        print("✓ Added Mac-style tabs/splits to Ghostty")
-    else:
-        print("! Failed to add Ghostty tabs/splits customizations")
-    return success
-
-
-def customize_mako_ghostty_persistent():
-    """Make Ghostty notifications persistent (no auto-timeout) in mako.
-
-    Why: Ghostty fires OSC 9 desktop notifications when long-running commands
-    finish, but mako's default-timeout=5000 dismisses them before the user
-    notices. Persistence is controlled by the notification daemon, not Ghostty.
-
-    How to apply: match on `desktop-entry=com.mitchellh.ghostty` (NOT app-name).
-    Ghostty's OSC 9 path forwards the inner app's name as the notification
-    app-name (e.g. "Claude Code"), but tags every notification it relays with
-    its own desktop-entry. So `app-name=ghostty` matches nothing in practice;
-    the desktop-entry matcher is what catches real Ghostty notifications.
-    """
-    print("Configuring mako to keep Ghostty notifications persistent...")
-
-    home = Path.home()
-    mako_conf = home / ".config/mako/config"
-
-    if not mako_conf.exists():
-        print("- ~/.config/mako/config not found, skipping")
-        return False
-
-    backup_file_before_edit(mako_conf)
-    success = add_fenced_content_to_file(
-        mako_conf,
-        [
-            "[desktop-entry=com.mitchellh.ghostty]",
-            "default-timeout=0",
-        ],
-        "MAKO GHOSTTY PERSISTENT",
-    )
-    if success:
-        run_command("makoctl reload")
-        print("✓ Ghostty notifications now persist until dismissed")
-    else:
-        print("! Failed to update mako config")
-    return success
-
-
-def configure_chrome_wayland():
-    """Force Google Chrome to launch on native Wayland (not XWayland).
-
-    Why: Hyprland uses fractional scaling (e.g. 1.6× on 4K displays). Native
-    Wayland clients honor that scale via Ozone; XWayland apps render at 1× and
-    look noticeably smaller. The system google-chrome.desktop launches Chrome
-    without Ozone flags, so it falls back to XWayland and looks tiny on HiDPI.
-    Chromium has Wayland flags via ~/.config/chromium-flags.conf, but Chrome's
-    binary doesn't reliably read ~/.config/chrome-flags.conf on Arch, so the
-    most robust fix is a user-local .desktop override.
-
-    How to apply: copy /usr/share/applications/google-chrome.desktop to
-    ~/.local/share/applications and inject Ozone flags into every Exec= line.
-    Also writes ~/.config/chrome-flags.conf as a fallback for wrappers that
-    do read it.
-    """
-    print("Configuring Google Chrome for native Wayland...")
-
-    home = Path.home()
-    flags = "--ozone-platform=wayland --ozone-platform-hint=wayland --enable-features=TouchpadOverscrollHistoryNavigation"
-
-    # Fallback: chrome-flags.conf (read by some wrappers)
-    chrome_flags_conf = home / ".config/chrome-flags.conf"
-    try:
-        chrome_flags_conf.write_text(
-            "--ozone-platform=wayland\n"
-            "--ozone-platform-hint=wayland\n"
-            "--enable-features=TouchpadOverscrollHistoryNavigation\n"
         )
-        print(f"✓ Wrote {chrome_flags_conf}")
-    except Exception as e:
-        print(f"! Failed to write chrome-flags.conf: {e}")
+        if not self.upsert_fenced(ghostty, lines, "OMARCHY GHOSTTY MAC TABS"):
+            self.failures.append("Ghostty Mac tab bindings")
 
-    # Primary: user-local desktop override with flags injected into Exec=
-    system_desktop = Path("/usr/share/applications/google-chrome.desktop")
-    user_desktop = home / ".local/share/applications/google-chrome.desktop"
+    def _write_updated(
+        self, path: Path, current: str, updated: str, description: str
+    ) -> None:
+        if current == updated:
+            print(f"- {description} already current in {path}")
+            return
+        if self.dry_run:
+            print(f"- Would update {description} in {path}")
+            return
+        self.backup(path)
+        path.write_text(updated)
+        self.record_applied(path)
+        print(f"✓ Updated {description} in {path}")
 
-    if not system_desktop.exists():
-        print("- /usr/share/applications/google-chrome.desktop not found, skipping desktop override")
-        return False
+    def install_and_configure_keyd(self) -> None:
+        if self.skip_keyd:
+            print("\n- Skipping keyd as requested")
+            return
 
-    try:
-        content = system_desktop.read_text()
-        new_lines = []
-        injected = 0
-        for line in content.splitlines():
-            if (
-                line.startswith("Exec=")
-                and "google-chrome-stable" in line
-                and "--ozone-platform" not in line
+        print("\nInstalling and configuring keyd...")
+        keyd_path = self.system_path("/etc/keyd/default.conf")
+        if keyd_path.exists() and not self.assume_yes and not self.dry_run:
+            response = (
+                input(
+                    f"{keyd_path} exists and will be replaced after backup. Continue? (y/N): "
+                )
+                .strip()
+                .lower()
+            )
+            if response not in {"y", "yes"}:
+                print("- Skipping keyd configuration")
+                return
+
+        if not self.run("omarchy-pkg-add", "keyd"):
+            self.failures.append("install keyd")
+            return
+
+        backup_path = f"{keyd_path}{BACKUP_SUFFIX}"
+        applied_path = f"{keyd_path}{APPLIED_SUFFIX}"
+        if (
+            keyd_path.exists()
+            and not Path(backup_path).exists()
+            and not self.run("sudo", "cp", str(keyd_path), backup_path)
+        ):
+            self.failures.append("back up keyd config")
+            return
+
+        if self.dry_run:
+            print(f"- Would install keyd config at {keyd_path}")
+            return
+
+        with tempfile.NamedTemporaryFile("w", delete=False) as temporary:
+            temporary.write(KEYD_CONFIG)
+            temporary_path = temporary.name
+        try:
+            if not self.run(
+                "sudo", "install", "-Dm644", temporary_path, str(keyd_path)
             ):
-                line = line.replace(
-                    "/usr/bin/google-chrome-stable",
-                    f"/usr/bin/google-chrome-stable {flags}",
-                    1,
-                )
-                injected += 1
-            new_lines.append(line)
+                self.failures.append("write keyd config")
+                return
+        finally:
+            Path(temporary_path).unlink(missing_ok=True)
 
-        user_desktop.parent.mkdir(parents=True, exist_ok=True)
-        user_desktop.write_text("\n".join(new_lines) + "\n")
-        print(f"✓ Wrote {user_desktop} with Wayland flags ({injected} Exec lines patched)")
-        return True
-    except Exception as e:
-        print(f"! Failed to create chrome desktop override: {e}")
-        return False
-
-
-def set_default_browser():
-    """Set Google Chrome as the default browser"""
-    print("Setting google-chrome.desktop as default browser...")
-
-    if not shutil.which("xdg-settings"):
-        print("! xdg-settings not found, skipping default browser setup")
-        return
-
-    commands = [
-        # Prefer setting Chrome directly
-        "xdg-settings set default-web-browser google-chrome.desktop",
-        "xdg-mime default google-chrome.desktop x-scheme-handler/http",
-        "xdg-mime default google-chrome.desktop x-scheme-handler/https",
-        # Typora as default markdown editor
-        "xdg-mime default typora.desktop text/markdown",
-        "xdg-mime default typora.desktop text/x-markdown",
-    ]
-
-    all_ok = True
-    for command in commands:
-        success = run_command(command)
-        if success:
-            print(f"✓ {command}")
-        else:
-            print(f"! Failed: {command}")
-            all_ok = False
-    return all_ok
-
-
-def reset_git_config():
-    """Reset git configuration changes made during installation"""
-    print("Resetting git configuration...")
-
-    # Unset the global git settings that were set during installation
-    git_configs_to_unset = ["pull.rebase", "init.defaultBranch"]
-
-    for config in git_configs_to_unset:
-        success = run_command(f"git config --global --unset {config}")
-        if success:
-            print(f"✓ Unset git config {config}")
-        else:
-            print(f"- git config {config} was not set or already unset")
-
-
-def update_desktop_database():
-    """Update the desktop database"""
-    print("Updating desktop database...")
-
-    if not shutil.which("update-desktop-database"):
-        print("! update-desktop-database not found, skipping")
-        return
-
-    home = Path.home()
-    user_apps = home / ".local/share/applications"
-
-    success = run_command(f"update-desktop-database {user_apps}")
-    if success:
-        print("✓ Desktop database updated")
-        return True
-    else:
-        print("! Failed to update desktop database")
-        return False
-
-
-def customize_waybar():
-    """Configure Waybar to display current keyboard language/layout with backup and fencing.
-
-    Supports Omarchy's default JSONC config at ~/.config/waybar/config.jsonc.
-    """
-    print("Configuring Waybar language display...")
-
-    home = Path.home()
-    # Prefer JSONC file used by this repo; fallback to plain config if present
-    waybar_config_jsonc = home / ".config/waybar/config.jsonc"
-    waybar_config_plain = home / ".config/waybar/config"
-    waybar_config = waybar_config_jsonc if waybar_config_jsonc.exists() else waybar_config_plain
-    waybar_style = home / ".config/waybar/style.css"
-
-    if not waybar_config.exists():
-        print("! Waybar config file not found, skipping language display setup")
-        return
-
-    try:
-        # Create backups before editing
-        backup_file_before_edit(waybar_config)
-        if waybar_style.exists():
-            backup_file_before_edit(waybar_style)
-
-        # Read config; parse JSONC if necessary
-        content = waybar_config.read_text()
-        if waybar_config.suffix == ".jsonc":
-            parsed = parse_jsonc_to_json(content)
-        else:
-            parsed = content
-
-        config_data = json.loads(parsed)
-
-        # Check if hyprland/language module is already configured
-        if "hyprland/language" in config_data:
-            print("- Waybar language module already configured")
-        else:
-            # Add hyprland/language to modules-right if not already present
-            if "modules-right" in config_data:
-                if "hyprland/language" not in config_data["modules-right"]:
-                    config_data["modules-right"].append("hyprland/language")
-                    print("✓ Added hyprland/language to modules-right")
-            else:
-                # Create modules-right if it doesn't exist
-                config_data["modules-right"] = ["hyprland/language"]
-                print("✓ Created modules-right with hyprland/language")
-
-            # Add the hyprland/language module configuration for Hebrew/English
-            config_data["hyprland/language"] = {
-                "format": "{}",
-                "format-en": "EN",
-                "format-he": "עב",
-                "on-click": "hyprctl switchxkblayout at-translated-set-2-keyboard next",
-                "tooltip": True,
-                "tooltip-format": "Keyboard Layout: {}",
-            }
-            print("✓ Added hyprland/language module configuration")
-
-            # Write the updated configuration back. Preserve .jsonc extension by
-            # writing JSON with a header comment if file is .jsonc
-            rendered_json = json.dumps(config_data, indent=2)
-            if waybar_config.suffix == ".jsonc":
-                config_with_comment = f"// OMARCHY CUSTOMIZATION: Added hyprland/language module\n{rendered_json}\n"
-                waybar_config.write_text(config_with_comment)
-            else:
-                waybar_config.write_text(rendered_json)
-            print("✓ Updated Waybar configuration file")
-
-        # Add CSS styling for the language indicator using fencing
-        if waybar_style.exists():
-            style_css_lines = [
-                "/* Language indicator styling */",
-                "#language {",
-                "    background-color: #2e3440;",
-                "    color: #88c0d0;",
-                "    border-radius: 3px;",
-                "    padding: 0 8px;",
-                "    margin: 0 2px;",
-                "    font-weight: bold;",
-                "}",
-                "",
-                "#language:hover {",
-                "    background-color: #3b4252;",
-                "    color: #eceff4;",
-                "}",
-            ]
-
-            success = add_fenced_content_to_file(
-                waybar_style, style_css_lines, "WAYBAR LANGUAGE STYLING"
-            )
-            if success:
-                print("✓ Added CSS styling with fencing")
-            else:
-                print("! Failed to add CSS styling")
-        else:
-            print("! Waybar style.css not found, skipping CSS styling")
-
-    except json.JSONDecodeError as e:
-        print(f"! Could not parse Waybar config as JSON: {e}")
-        return False
-    except Exception as e:
-        print(f"! Error configuring Waybar language display: {e}")
-        return False
-    return True
-
-
-def configure_toshy_keyboard_layout():
-    """Configure custom Toshy keyboard layout with Mac-style modifier mapping and backup"""
-    print("Configuring custom Toshy keyboard layout...")
-
-    home = Path.home()
-    toshy_config = home / ".config/toshy/toshy_config.py"
-
-    if not toshy_config.exists():
-        print("! Toshy config file not found")
-        return
-
-    # Create backup before editing
-    backup_file_before_edit(toshy_config)
-
-    try:
-        content = toshy_config.read_text()
-
-        # Check if our custom configuration already exists
-        if "OMARCHY CUSTOMIZATION: Override keyboard type" in content:
-            print("- Custom keyboard layout already configured")
+        if not self.run("sudo", "cp", str(keyd_path), applied_path):
+            self.failures.append("record applied keyd config")
             return
 
-        # 1. Add keyboard type override to disable built-in modmaps
-        settings_marker = "cnfg.watch_shared_devices()     # Look for network KVM apps and watch logs (on server only)"
-        if settings_marker in content:
-            override_config = """
-        # === START OMARCHY CUSTOMIZATION: Override keyboard type ===
-        cnfg.override_kbtype = 'IBM'     # Use IBM type to avoid Windows/Mac/Chromebook built-in modmaps
-        # === END OMARCHY CUSTOMIZATION: Override keyboard type ==="""
+        if not self.run("sudo", "systemctl", "enable", "--now", "keyd"):
+            self.failures.append("enable keyd")
+        if not self.run("sudo", "keyd", "reload"):
+            self.failures.append("reload keyd")
 
-            content = content.replace(
-                settings_marker, settings_marker + override_config
-            )
-            print("✓ Added keyboard type override with clear marking")
-
-        # 2. Add custom modmaps to user_custom_modmaps slice
-        start_marker = "###  SLICE_MARK_START: user_custom_modmaps  ###"
-        end_marker = "###  SLICE_MARK_END: user_custom_modmaps  ###"
-
-        custom_modmaps = """# === START OMARCHY CUSTOMIZATION: Custom modmaps ===
-modmap("OMARCHY custom layout: Cmd→Ctrl, Ctrl→Alt, keep Super - GUI", {
-    # Left-hand modifiers
-    Key.LEFT_ALT:  Key.LEFT_CTRL,   # Alt (Cmd) → Ctrl
-    Key.LEFT_CTRL: Key.LEFT_ALT,    # Ctrl      → Alt
-    Key.LEFT_META: Key.LEFT_META,   # Win/Super stays Super
-
-    # Right-hand modifiers (optional)
-    Key.RIGHT_ALT:  Key.RIGHT_CTRL,
-    Key.RIGHT_CTRL: Key.RIGHT_ALT,
-    Key.RIGHT_META: Key.RIGHT_META,
-}, when = lambda ctx:
-    not matchProps(clas=termStr)(ctx)
-)
-
-modmap("OMARCHY custom layout: Terminals - preserve Ctrl/Alt, keep Super", {
-    # In terminals: keep normal Ctrl/Alt behavior but preserve Super
-    Key.LEFT_ALT:  Key.LEFT_ALT,    # Alt stays Alt
-    Key.LEFT_CTRL: Key.LEFT_CTRL,   # Ctrl stays Ctrl  
-    Key.LEFT_META: Key.LEFT_META,   # Win/Super stays Super
-
-    # Right-hand modifiers
-    Key.RIGHT_ALT:  Key.RIGHT_ALT,
-    Key.RIGHT_CTRL: Key.RIGHT_CTRL,
-    Key.RIGHT_META: Key.RIGHT_META,
-}, when = lambda ctx:
-    matchProps(clas=termStr)(ctx)
-)
-# === END OMARCHY CUSTOMIZATION: Custom modmaps ==="""
-
-        if start_marker in content and end_marker in content:
-            # Find the slice and insert the modmaps
-            start_idx = content.find(start_marker) + len(start_marker)
-            end_idx = content.find(end_marker)
-
-            # Check if there's already content between the markers
-            slice_content = content[start_idx:end_idx]
-            if "modmap(" not in slice_content:
-                # Insert our custom modmaps between the markers
-                new_content = (
-                    content[:start_idx]
-                    + f"\n\n{custom_modmaps}\n\n"
-                    + content[end_idx:]
-                )
-                content = new_content
-                print("✓ Added custom keyboard layout to user_custom_modmaps slice")
-            else:
-                print("- Custom modmap already exists in user_custom_modmaps slice")
+    def finalize(self) -> None:
+        print("\nRefreshing desktop and Hyprland state...")
+        user_apps = self.home_path(".local/share/applications")
+        if not self.run("update-desktop-database", str(user_apps)):
+            self.failures.append("desktop database refresh")
+        if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            if not self.run("hyprctl", "reload"):
+                self.failures.append("Hyprland reload")
         else:
-            print("! user_custom_modmaps slice not found in Toshy config")
-            return
+            print("- No live Hyprland session detected; changes apply next login")
 
-        # 3. Disable emacs-style Super key mappings that interfere with Hyprland
-        emacs_mappings = [
-            'C("Super-a"):               C("Home"),                      # Beginning of Line',
-            'C("Super-e"):               C("End"),                       # End of Line',
-            'C("Super-b"):               C("Left"),',
-            'C("Super-f"):               C("Right"),',
-            'C("Super-n"):               C("Down"),',
-            'C("Super-p"):               C("Up"),',
-            'C("Super-k"):              [C("Shift-End"), C("Backspace")],',
-            'C("Super-d"):               C("Delete"),',
-        ]
+    def apply(self) -> int:
+        self.require_quattro()
+        print("Applying Omarchy Quattro customizations")
+        print("=" * 48)
+        self.report_unsupported_legacy_preferences()
 
-        for mapping in emacs_mappings:
-            if mapping in content:
-                content = content.replace(
-                    f"    {mapping}",
-                    f"    # {mapping}  # DISABLED by OMARCHY for Hyprland",
-                )
-        print("✓ Disabled emacs-style Super key mappings with clear marking")
+        self.install_chrome()
+        self.manage_packages()
+        self.remove_mise_wrappers()
+        self.remove_user_config_directories()
+        self.manage_desktop_entries()
+        self.create_nautilus_vscode_script()
+        self.customize_bash()
+        self.customize_ssh_ghostty_truecolor()
+        self.customize_hyprland()
+        self.customize_terminal_paste()
+        self.customize_ghostty_mac_keys()
+        self.install_and_configure_keyd()
+        self.finalize()
 
-        # Write the updated content
-        toshy_config.write_text(content)
-        print("✓ Updated Toshy configuration file")
+        print("\n" + "=" * 48)
+        if self.failures:
+            print("! Customization completed with failures:")
+            for failure in self.failures:
+                print(f"  - {failure}")
+            return 1
 
-        # Restart Toshy service to apply keyboard layout changes
-        print("Restarting Toshy service to apply changes...")
-        success = run_command("systemctl --user restart toshy-config.service")
-        if success:
-            print("✓ Restarted Toshy service")
-        else:
-            print("! Failed to restart Toshy service")
-
-    except Exception as e:
-        print(f"! Error configuring Toshy keyboard layout: {e}")
+        print("✓ Omarchy Quattro customization complete")
+        print("✓ Quattro-owned files and Chrome flags were preserved")
+        print("✓ Legacy Waybar, Walker, Mako, and Hyprland .conf paths were not used")
+        return 0
 
 
-def configure_toshy_systemd():
-    """Configure Toshy systemd service with proper environment variables"""
-    print("Configuring Toshy systemd service...")
-
-    home = Path.home()
-    service_template = (
-        home / ".config/toshy/systemd-user-service-units/toshy-config.service"
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="show actions without changing the system",
     )
-    user_systemd_dir = home / ".config/systemd/user"
-    service_dest = user_systemd_dir / "toshy-config.service"
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="replace an existing keyd config without prompting",
+    )
+    parser.add_argument(
+        "--skip-keyd", action="store_true", help="do not install or configure keyd"
+    )
+    return parser.parse_args(argv)
 
-    if not service_template.exists():
-        print("! Toshy service template not found")
-        return
 
-    # Ensure user systemd directory exists
-    user_systemd_dir.mkdir(parents=True, exist_ok=True)
-
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    customizer = Customizer(
+        dry_run=args.dry_run,
+        assume_yes=args.yes,
+        skip_keyd=args.skip_keyd,
+    )
     try:
-        # Read the template service file
-        content = service_template.read_text()
-
-        # Add XDG_SESSION_TYPE=wayland if not already present
-        if "Environment=XDG_SESSION_TYPE=wayland" not in content:
-            content = content.replace(
-                "Environment=TERM=xterm",
-                "Environment=TERM=xterm\nEnvironment=XDG_SESSION_TYPE=wayland",
-            )
-            print("✓ Added XDG_SESSION_TYPE=wayland to service file")
-
-        # Write the updated service file to user systemd directory
-        service_dest.write_text(content)
-        print("✓ Updated Toshy systemd service file")
-
-        # Reload systemd and enable/start the service
-        success = run_command("systemctl --user daemon-reload")
-        if success:
-            print("✓ Reloaded systemd daemon")
-
-        success = run_command("systemctl --user enable toshy-config.service --now")
-        if success:
-            print("✓ Enabled and started Toshy service")
-        else:
-            print("! Failed to enable/start Toshy service")
-
-    except Exception as e:
-        print(f"! Error configuring Toshy systemd service: {e}")
-
-
-def install_and_configure_keyd():
-    """Install keyd and configure Mac-like keyboard behavior with backup"""
-    print("Installing and configuring keyd...")
-
-    # Check if keyd config already exists and create backup
-    keyd_config_path = Path("/etc/keyd/default.conf")
-    if keyd_config_path.exists():
-        print("✓ Found existing keyd configuration")
-        # Create backup by copying to .original
-        backup_path = Path("/etc/keyd/default.conf.original")
-        if not backup_path.exists():
-            success = run_command(
-                "sudo cp /etc/keyd/default.conf /etc/keyd/default.conf.original"
-            )
-            if success:
-                print("✓ Created backup: /etc/keyd/default.conf.original")
-            else:
-                print("! Failed to create backup")
-        else:
-            print("- Backup already exists: /etc/keyd/default.conf.original")
-
-        print("⚠️  WARNING: Will overwrite existing keyd configuration!")
-        response = (
-            input("Do you want to continue and overwrite it? (y/N): ").strip().lower()
-        )
-        if response != "y" and response != "yes":
-            print("Skipping keyd configuration.")
-            return
-
-    # Install keyd
-    print("Installing keyd...")
-    success = run_command("yay -S --noconfirm --needed keyd")
-
-    if success:
-        print("✓ keyd installed successfully")
-    else:
-        print("! keyd installation failed")
-        return
-
-    # Enable and start keyd service
-    print("Enabling and starting keyd service...")
-    success = run_command("sudo systemctl enable --now keyd")
-    if success:
-        print("✓ keyd service enabled and started")
-    else:
-        print("! Failed to enable/start keyd service")
-
-    # Create keyd configuration with clear fencing
-    print("Creating keyd configuration...")
-    keyd_config = """# === START OMARCHY CUSTOMIZATION ===
-# OMARCHY: Mac-like keyboard behavior configuration
-# This file can be reverted by restoring from /etc/keyd/default.conf.original
-
-# Apply to every keyboard
-[ids]
-*
-
-# ----  MAIN LAYER  -------------------------------------------------
-[main]
-# Map physical Alt to a custom layer that acts like Control but with special arrow behavior
-leftalt = layer(mac_control)
-leftcontrol = layer(alt)
-rightalt = layer(mac_control)  
-rightcontrol = layer(alt)
-
-# ----  MAC_CONTROL LAYER (acts like Control but with Mac-style arrows) ----
-[mac_control:C]
-left = home
-right = end
-
-# ----  ALT LAYER (physical Ctrl now acts as Alt) ----
-[alt:A]
-# Exception: preserve Ctrl+C for terminal interrupt
-c = C-c
-
-# === END OMARCHY CUSTOMIZATION ===
-"""
-
-    try:
-        # Ensure /etc/keyd directory exists
-        run_command("sudo mkdir -p /etc/keyd")
-
-        # Write configuration to temporary file first
-        temp_config = Path("/tmp/keyd_default.conf")
-        temp_config.write_text(keyd_config)
-
-        # Copy to /etc/keyd/default.conf
-        success = run_command("sudo cp /tmp/keyd_default.conf /etc/keyd/default.conf")
-        if success:
-            print("✓ Created keyd configuration at /etc/keyd/default.conf")
-        else:
-            print("! Failed to create keyd configuration")
-            return
-
-        # Clean up temp file
-        temp_config.unlink()
-
-        # Reload keyd configuration
-        print("Reloading keyd configuration...")
-        success = run_command("sudo keyd reload")
-        if success:
-            print("✓ keyd configuration reloaded")
-        else:
-            print("! Failed to reload keyd configuration")
-
-    except Exception as e:
-        print(f"! Error creating keyd configuration: {e}")
-
-
-def install_toshy():
-    """Install Toshy keymapper for Mac-like keyboard behavior using official bootstrap"""
-    print("Installing Toshy keymapper...")
-
-    # Check if Toshy is already installed
-    toshy_config_dir = Path.home() / ".config/toshy"
-    if toshy_config_dir.exists():
-        print(
-            "- Toshy appears to be already installed, configuring systemd service and keyboard layout"
-        )
-        configure_toshy_systemd()
-        configure_toshy_keyboard_layout()
-        return
-
-    # Check for required tools (curl or wget)
-    if not shutil.which("curl") and not shutil.which("wget"):
-        print("! Neither curl nor wget found, skipping Toshy installation")
-        return
-
-    # Use official Toshy bootstrap installation
-    print("Running Toshy bootstrap installation...")
-    bootstrap_cmd = 'bash -c "$(curl -L https://raw.githubusercontent.com/RedBearAK/toshy/main/scripts/bootstrap.sh || wget -O - https://raw.githubusercontent.com/RedBearAK/toshy/main/scripts/bootstrap.sh)"'
-
-    success = run_command(bootstrap_cmd)
-    if success:
-        print("✓ Toshy installed successfully")
-        # Configure systemd service and keyboard layout after installation
-        configure_toshy_systemd()
-        configure_toshy_keyboard_layout()
-    else:
-        print("! Toshy installation failed")
-
-
-def main():
-    """Main customization function"""
-    print("Starting Omarchy customization...")
-    print("=" * 50)
-    print("NOTE: This script follows Omarchy best practices by ONLY modifying")
-    print("user configuration files, preserving upgrade compatibility.")
-    print("=" * 50)
-
-    # Check for yay at the beginning - required for package management
-    if not shutil.which("yay"):
-        print("! ERROR: yay package manager not found")
-        print("! yay is required for package installation and removal")
-        print("! Please install yay first: https://github.com/Jguer/yay")
-        sys.exit(1)
-
-    try:
-        remove_packages()
-        print()
-
-
-        manage_font_packages()
-        print()
-
-        # install_toshy()  # Commented out - using keyd instead
-        install_and_configure_keyd()
-        print()
-
-        remove_user_config_directories()
-        print()
-
-        remove_broken_mise_shims()
-        print()
-
-        remove_system_asdcontrol()
-        print()
-
-        manage_user_desktop_files()
-        print()
-
-        chrome_wayland_ok = configure_chrome_wayland()
-        print()
-
-        create_nautilus_vscode_script()
-        print()
-
-        remove_webapps_from_user_space()
-        print()
-
-        create_webapps()
-        print()
-
-        bash_ok = customize_bash_config()
-        print()
-
-        ssh_ghostty_truecolor_ok = customize_ssh_ghostty_truecolor()
-        print()
-
-        hyprland_ok = update_user_hyprland_config()
-        print()
-
-        terminal_paste_ok = customize_terminal_paste()
-        print()
-
-        ghostty_mac_keys_ok = customize_ghostty_mac_keys()
-        print()
-
-        mako_ghostty_ok = customize_mako_ghostty_persistent()
-        print()
-
-        # update_user_hypridle_config()  # Commented out - user prefers original hypridle config
-        # print()
-
-        reset_git_config()
-        print()
-
-        default_browser_ok = set_default_browser()
-        print()
-
-        desktop_db_ok = update_desktop_database()
-        print()
-
-        waybar_ok = customize_waybar()
-        print()
-
-        print("Restarting Waybar...")
-        run_command("killall waybar")
-        # Launch via Hyprland so the new waybar is a child of the compositor,
-        # not the script's bash -c shell (which would SIGHUP it on exit).
-        run_command("hyprctl dispatch exec -- uwsm-app -- waybar")
-        print("✓ Waybar restarted")
-        print()
-
-        print("=" * 50)
-        print("✓ Customization complete!")
-        print("✓ Removed dev/editor/misc apps where present (neovim, dropbox, Zoom, Obsidian, Signal, 1Password, LocalSend)")
-        print("✓ Switched from Chromium to Google Chrome")
-        print("✓ Updated font packages (removed CJK/extra fonts, added Hebrew support)")
-        print("✓ keyd setup step executed (install or reuse existing configuration)")
-        if hyprland_ok:
-            print("✓ Set Chrome environment variables and window rules in Hyprland")
-        if bash_ok:
-            print("✓ Added Bash improvements and completion")
-        if ssh_ghostty_truecolor_ok:
-            print("✓ Enabled truecolor Codex styling in Ghostty SSH sessions")
-        print("✓ Disabled Apple display brightness controls")
-        print("✓ Reset git configuration")
-        print("✓ Installed Joplin and set Super+Shift+J keybinding")
-        print("✓ Bound Ctrl+Shift+C to upstream Walker clipboard manager")
-        if waybar_ok:
-            print("✓ Configured Waybar language display for Hebrew/English layouts")
-        if terminal_paste_ok:
-            print("✓ Mac-style Ctrl+V paste & selection auto-copy in Alacritty/Ghostty")
-        if ghostty_mac_keys_ok:
-            print("✓ Mac-style tabs/splits in Ghostty (Ctrl+T/W/D, Ctrl+Shift+D)")
-        if mako_ghostty_ok:
-            print("✓ Ghostty notifications persist until dismissed (mako)")
-        if chrome_wayland_ok:
-            print("✓ Google Chrome forced to native Wayland (respects HiDPI scale)")
-        print("✓ Removed broken mise-dependent shims from ~/.local/bin/")
-        print("✓ Created Nautilus script for opening files in VS Code/Cursor")
-        if default_browser_ok:
-            print("✓ Set default browser handlers to google-chrome.desktop")
-        if desktop_db_ok:
-            print("✓ Updated desktop database")
-        print("✓ All changes made to USER configuration files only")
-        print("✓ Internal Omarchy files preserved for upgrade compatibility")
-
+        return customizer.apply()
     except KeyboardInterrupt:
-        print("\n! Customization interrupted by user")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n! Unexpected error: {e}")
-        sys.exit(1)
+        print("\n! Customization interrupted")
+        return 130
+    except CustomizationError as error:
+        print(f"! {error}")
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

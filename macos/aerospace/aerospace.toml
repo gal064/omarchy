@@ -23,6 +23,7 @@ default-root-container-orientation = 'auto'
 automatically-unhide-macos-hidden-apps = true
 on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
 
+
 key-mapping.preset = 'qwerty'
 
 # 6px between windows, 4px at the screen edges
@@ -47,13 +48,12 @@ alt-m = 'exec-and-forget open -a Muxflow'
 alt-k = 'exec-and-forget qlmanage -p ~/.config/aerospace/aerospace.toml'
 
 # --- Windows (tiling.lua) ---
-alt-w = 'close'
-alt-q = 'close'
+alt-w = 'exec-and-forget ~/.config/aerospace/close.sh'
+alt-q = 'exec-and-forget ~/.config/aerospace/close.sh'
 alt-j = 'layout tiles horizontal vertical'  # toggle split
 alt-t = 'layout floating tiling'
 alt-f = 'fullscreen --no-outer-gaps'
 alt-e = 'fullscreen'                       # customize.py: SUPER+E full width
-alt-l = 'layout tiles accordion'           # toggle workspace layout
 
 # Focus
 alt-left = 'focus left'
@@ -76,7 +76,8 @@ alt-cmd-minus = 'resize smart -300'
 alt-cmd-equal = 'resize smart +300'
 alt-0 = 'balance-sizes'
 
-# --- Workspaces ---
+# --- Workspaces: 1-9 on the main monitor, L (floating) on the laptop screen ---
+alt-shift-l = 'workspace L'
 alt-1 = 'workspace 1'
 alt-2 = 'workspace 2'
 alt-3 = 'workspace 3'
@@ -116,11 +117,11 @@ alt-tab = 'workspace --wrap-around next'
 alt-shift-tab = 'workspace --wrap-around prev'
 alt-cmd-tab = 'workspace-back-and-forth'
 
-# Move workspace to monitor (SUPER+SHIFT+ALT+arrows)
-alt-shift-ctrl-left = 'move-workspace-to-monitor --wrap-around left'
-alt-shift-ctrl-right = 'move-workspace-to-monitor --wrap-around right'
-alt-shift-ctrl-up = 'move-workspace-to-monitor --wrap-around up'
-alt-shift-ctrl-down = 'move-workspace-to-monitor --wrap-around down'
+# Move window to the other monitor: floats on the laptop (L), tiles on the main monitor
+alt-shift-ctrl-left = ['move-node-to-monitor --focus-follows-window --wrap-around left', 'test %{workspace} = L && layout floating || layout tiling']
+alt-shift-ctrl-right = ['move-node-to-monitor --focus-follows-window --wrap-around right', 'test %{workspace} = L && layout floating || layout tiling']
+alt-shift-ctrl-up = ['move-node-to-monitor --focus-follows-window --wrap-around up', 'test %{workspace} = L && layout floating || layout tiling']
+alt-shift-ctrl-down = ['move-node-to-monitor --focus-follows-window --wrap-around down', 'test %{workspace} = L && layout floating || layout tiling']
 
 # Service mode: reload config, reset layout
 alt-shift-semicolon = 'mode service'
@@ -171,6 +172,11 @@ run = 'layout floating'
 if.app-name-regex-substring = '(?i)(cleanshot|wispr|handy|maccy|dropover|amphetamine|pomodoro|fathom)'
 run = 'layout floating'
 
+# --- Laptop screen (workspace L): windows float, like plain macOS ---
+[[on-window-detected]]
+if.workspace = 'L'
+run = 'layout floating'
+
 # --- Dwindle placement for new windows (must stay last: first matching rule wins) ---
 [[on-window-detected]]
 if.during-aerospace-startup = false
@@ -178,4 +184,19 @@ if.during-aerospace-startup = false
 # Join the new window with the one it was placed next to (dwindle). With only
 # two windows that collapses the workspace into a vertical stack, so flip the
 # root back to side-by-side.
-run = '(test %{window-parent-container-layout} = h_tiles && join-with left || test %{window-parent-container-layout} = v_tiles && join-with up); test %{workspace-root-container-layout} = v_tiles && layout h_tiles'
+run = 'test %{window-parent-container-layout} = h_tiles && (join-with left; test %{workspace-root-container-layout} = v_tiles && layout h_tiles) || test %{window-parent-container-layout} = v_tiles && join-with up'
+
+# --- Monitors: tile on the main monitor, leave the laptop screen free-floating ---
+# Workspaces 1-9 follow the main monitor, so when the external display is
+# disconnected they (and their windows) move to the laptop automatically.
+[workspace-to-monitor-force-assignment]
+1 = 'main'
+2 = 'main'
+3 = 'main'
+4 = 'main'
+5 = 'main'
+6 = 'main'
+7 = 'main'
+8 = 'main'
+9 = 'main'
+L = 'built-in'

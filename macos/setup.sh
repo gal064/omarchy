@@ -46,6 +46,7 @@ echo "Installing AeroSpace config..."
 mkdir -p "$AEROSPACE_DIR"
 install_file "$MACOS_DIR/aerospace/aerospace.toml" "$AEROSPACE_DIR/aerospace.toml" 644
 install_file "$MACOS_DIR/aerospace/scratchpad.sh" "$AEROSPACE_DIR/scratchpad.sh" 755
+install_file "$MACOS_DIR/aerospace/close.sh" "$AEROSPACE_DIR/close.sh" 755
 
 echo
 echo "Recommended macOS setting: group windows by app in Mission Control..."

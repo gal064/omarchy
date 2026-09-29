@@ -24,7 +24,7 @@ brew untap nikitabobko/tap
 brew untap FelixKratz/formulae
 
 echo "Removing config..."
-for file in aerospace.toml scratchpad.sh; do
+for file in aerospace.toml scratchpad.sh close.sh; do
   if [[ -e $AEROSPACE_DIR/$file$BACKUP_SUFFIX ]]; then
     mv "$AEROSPACE_DIR/$file$BACKUP_SUFFIX" "$AEROSPACE_DIR/$file"
     echo "✓ Restored previous $file"

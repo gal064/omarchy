@@ -1,0 +1,181 @@
+# AeroSpace config modeled on Omarchy 4 + customize.py. Installed by macos/setup.sh.
+#
+# Modifier mapping (follows the keyd layout in customize.py, by physical key position):
+#   Omarchy SUPER -> alt  (Option sits where Super was)
+#   Omarchy ALT   -> ctrl (keyd moved logical Alt onto the Ctrl key)
+#   Omarchy CTRL  -> cmd  (keyd moved logical Ctrl onto the Alt/Cmd key)
+#
+
+config-version = 2
+
+# Launch AeroSpace (and borders, via after-startup-command) at login.
+start-at-login = true
+
+# Omarchy look: cyan->green gradient border, rounded to match macOS window corners.
+after-startup-command = [
+  "exec-and-forget /opt/homebrew/bin/borders style=round width=3.0 hidpi=on active_color='gradient(top_left=0xee33ccff,bottom_right=0xee00ff99)' inactive_color=0xaa595959",
+]
+
+enable-normalization-flatten-containers = true
+enable-normalization-opposite-orientation-for-nested-containers = true
+default-root-container-layout = 'tiles'
+default-root-container-orientation = 'auto'
+automatically-unhide-macos-hidden-apps = true
+on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
+
+key-mapping.preset = 'qwerty'
+
+# Omarchy: gaps_in = 5 per window side (10 between windows), gaps_out = 10
+[gaps]
+inner.horizontal = 10
+inner.vertical = 10
+outer.left = 10
+outer.right = 10
+outer.top = 10
+outer.bottom = 10
+
+[mode.main.binding]
+# --- Apps (applications.lua + customize.py) ---
+alt-enter = '''exec-and-forget osascript -e 'tell application "Ghostty" to new window' -e 'tell application "Ghostty" to activate' '''
+alt-shift-enter = '''exec-and-forget osascript -e 'tell application "Google Chrome" to make new window' -e 'tell application "Google Chrome" to activate' '''
+alt-shift-b = '''exec-and-forget osascript -e 'tell application "Google Chrome" to make new window' -e 'tell application "Google Chrome" to activate' '''
+alt-shift-ctrl-b = '''exec-and-forget osascript -e 'tell application "Google Chrome" to make new window with properties {mode:"incognito"}' -e 'tell application "Google Chrome" to activate' '''
+alt-shift-f = 'exec-and-forget open -a Finder ~'
+alt-shift-n = 'exec-and-forget open -a Cursor'
+alt-shift-j = 'exec-and-forget open -a Joplin'
+alt-m = 'exec-and-forget open -a Muxflow'
+alt-k = 'exec-and-forget qlmanage -p ~/.config/aerospace/aerospace.toml'
+
+# --- Windows (tiling.lua) ---
+alt-w = 'close'
+alt-q = 'close'
+alt-j = 'layout tiles horizontal vertical'  # toggle split
+alt-t = 'layout floating tiling'
+alt-f = 'fullscreen --no-outer-gaps'
+alt-e = 'fullscreen'                       # customize.py: SUPER+E full width
+alt-l = 'layout tiles accordion'           # toggle workspace layout
+
+# Focus
+alt-left = 'focus left'
+alt-right = 'focus right'
+alt-up = 'focus up'
+alt-down = 'focus down'
+
+# Swap
+alt-shift-left = 'move left'
+alt-shift-right = 'move right'
+alt-shift-up = 'move up'
+alt-shift-down = 'move down'
+
+# Resize (SUPER+minus/equal, SUPER+SHIFT for a smaller step)
+alt-minus = 'resize smart -100'
+alt-equal = 'resize smart +100'
+alt-shift-minus = 'resize smart -25'
+alt-shift-equal = 'resize smart +25'
+alt-cmd-minus = 'resize smart -300'
+alt-cmd-equal = 'resize smart +300'
+alt-0 = 'balance-sizes'
+
+# --- Workspaces ---
+alt-1 = 'workspace 1'
+alt-2 = 'workspace 2'
+alt-3 = 'workspace 3'
+alt-4 = 'workspace 4'
+alt-5 = 'workspace 5'
+alt-6 = 'workspace 6'
+alt-7 = 'workspace 7'
+alt-8 = 'workspace 8'
+alt-9 = 'workspace 9'
+
+alt-shift-1 = ['move-node-to-workspace 1', 'workspace 1']
+alt-shift-2 = ['move-node-to-workspace 2', 'workspace 2']
+alt-shift-3 = ['move-node-to-workspace 3', 'workspace 3']
+alt-shift-4 = ['move-node-to-workspace 4', 'workspace 4']
+alt-shift-5 = ['move-node-to-workspace 5', 'workspace 5']
+alt-shift-6 = ['move-node-to-workspace 6', 'workspace 6']
+alt-shift-7 = ['move-node-to-workspace 7', 'workspace 7']
+alt-shift-8 = ['move-node-to-workspace 8', 'workspace 8']
+alt-shift-9 = ['move-node-to-workspace 9', 'workspace 9']
+
+# Move silently (SUPER+SHIFT+ALT+n)
+alt-shift-ctrl-1 = 'move-node-to-workspace 1'
+alt-shift-ctrl-2 = 'move-node-to-workspace 2'
+alt-shift-ctrl-3 = 'move-node-to-workspace 3'
+alt-shift-ctrl-4 = 'move-node-to-workspace 4'
+alt-shift-ctrl-5 = 'move-node-to-workspace 5'
+alt-shift-ctrl-6 = 'move-node-to-workspace 6'
+alt-shift-ctrl-7 = 'move-node-to-workspace 7'
+alt-shift-ctrl-8 = 'move-node-to-workspace 8'
+alt-shift-ctrl-9 = 'move-node-to-workspace 9'
+
+# Scratchpad (SUPER+S toggle, SUPER+ALT+S send window there)
+alt-s = 'exec-and-forget ~/.config/aerospace/scratchpad.sh'
+alt-ctrl-s = 'move-node-to-workspace S'
+
+alt-tab = 'workspace --wrap-around next'
+alt-shift-tab = 'workspace --wrap-around prev'
+alt-cmd-tab = 'workspace-back-and-forth'
+
+# Move workspace to monitor (SUPER+SHIFT+ALT+arrows)
+alt-shift-ctrl-left = 'move-workspace-to-monitor --wrap-around left'
+alt-shift-ctrl-right = 'move-workspace-to-monitor --wrap-around right'
+alt-shift-ctrl-up = 'move-workspace-to-monitor --wrap-around up'
+alt-shift-ctrl-down = 'move-workspace-to-monitor --wrap-around down'
+
+# Service mode: reload config, reset layout
+alt-shift-semicolon = 'mode service'
+
+[mode.service.binding]
+esc = ['reload-config', 'mode main']
+r = ['flatten-workspace-tree', 'mode main']
+f = ['layout floating tiling', 'mode main']
+backspace = ['close-all-windows-but-current', 'mode main']
+
+# --- Startup only: spread already-open windows across workspaces so they
+# don't all pile into workspace 1. New windows still open where you are, like Omarchy.
+[[on-window-detected]]
+if.during-aerospace-startup = true
+if.app-name-regex-substring = '(?i)^ghostty$'
+run = 'move-node-to-workspace 1'
+
+[[on-window-detected]]
+if.during-aerospace-startup = true
+if.app-name-regex-substring = '(?i)^google chrome$'
+run = 'move-node-to-workspace 2'
+
+[[on-window-detected]]
+if.during-aerospace-startup = true
+if.app-name-regex-substring = '(?i)(slack|whatsapp)'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.during-aerospace-startup = true
+if.app-name-regex-substring = '(?i)^(cursor|code|visual studio code)$'
+run = 'move-node-to-workspace 4'
+
+[[on-window-detected]]
+if.during-aerospace-startup = true
+if.app-name-regex-substring = '(?i)(finder|docker|muxflow|joplin)'
+run = 'move-node-to-workspace 5'
+
+# --- Float rules: settings and menu-bar utilities shouldn't tile ---
+[[on-window-detected]]
+if.app-id = 'com.apple.systempreferences'
+run = 'layout floating'
+
+[[on-window-detected]]
+if.app-id = 'com.apple.calculator'
+run = 'layout floating'
+
+[[on-window-detected]]
+if.app-name-regex-substring = '(?i)(cleanshot|wispr|handy|maccy|dropover|amphetamine|pomodoro|fathom)'
+run = 'layout floating'
+
+# --- Dwindle placement for new windows (must stay last: first matching rule wins) ---
+[[on-window-detected]]
+if.during-aerospace-startup = false
+# Runs inside AeroSpace before the window is drawn, so there is no jump.
+# Join the new window with the one it was placed next to (dwindle). With only
+# two windows that collapses the workspace into a vertical stack, so flip the
+# root back to side-by-side.
+run = '(test %{window-parent-container-layout} = h_tiles && join-with left || test %{window-parent-container-layout} = v_tiles && join-with up); test %{workspace-root-container-layout} = v_tiles && layout h_tiles'

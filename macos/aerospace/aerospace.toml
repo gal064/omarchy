@@ -25,14 +25,14 @@ on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
 
 key-mapping.preset = 'qwerty'
 
-# Omarchy: gaps_in = 5 per window side (10 between windows), gaps_out = 10
+# 6px between windows, 4px at the screen edges
 [gaps]
-inner.horizontal = 10
-inner.vertical = 10
-outer.left = 10
-outer.right = 10
-outer.top = 10
-outer.bottom = 10
+inner.horizontal = 6
+inner.vertical = 6
+outer.left = 4
+outer.right = 4
+outer.top = 4
+outer.bottom = 4
 
 [mode.main.binding]
 # --- Apps (applications.lua + customize.py) ---

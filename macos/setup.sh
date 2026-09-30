@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Set up an Omarchy-like tiling desktop on macOS with AeroSpace + borders.
+# Set up an Omarchy-like tiling desktop on macOS with AeroSpace + AutoRaise.
 # Safe to re-run. Files it replaces are backed up with a .pre-omarchy suffix.
 # Undo with macos/uninstall.sh.
 
@@ -24,7 +24,7 @@ install_file() {
   echo "✓ Installed $target"
 }
 
-echo "Installing AeroSpace and borders..."
+echo "Installing AeroSpace and AutoRaise..."
 if ! command -v brew >/dev/null; then
   echo "Homebrew is required: https://brew.sh" >&2
   exit 1
@@ -33,13 +33,13 @@ fi
 # Newer Homebrew refuses third-party formulae until they are trusted.
 # Trust only these two packages, not their whole taps.
 brew tap nikitabobko/tap
-brew tap FelixKratz/formulae
+brew tap dimentium/autoraise
 if brew trust --help >/dev/null 2>&1; then
   brew trust --cask nikitabobko/tap/aerospace
-  brew trust --formula felixkratz/formulae/borders
+  brew trust --formula dimentium/autoraise/autoraise
 fi
 brew list --cask aerospace >/dev/null 2>&1 || brew install --cask nikitabobko/tap/aerospace
-brew list --formula borders >/dev/null 2>&1 || brew install felixkratz/formulae/borders
+brew list --formula autoraise >/dev/null 2>&1 || brew install dimentium/autoraise/autoraise
 
 echo
 echo "Installing AeroSpace config..."
@@ -64,7 +64,7 @@ fi
 cat <<'EOF'
 
 Done. Remaining manual steps:
-- Allow AeroSpace and borders in System Settings > Privacy & Security > Accessibility.
+- Allow AeroSpace and AutoRaise in System Settings > Privacy & Security > Accessibility.
 - Option+Return opens a terminal. If Ghostty binds it globally (e.g. the Quick
   Terminal), rebind it in ~/.config/ghostty/config, e.g.
     keybind = global:alt+grave_accent=toggle_quick_terminal

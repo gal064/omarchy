@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Undo macos/setup.sh: remove AeroSpace, borders, and their config, and restore
+# Undo macos/setup.sh: remove AeroSpace, AutoRaise, and their config, and restore
 # any files setup.sh backed up. The expose-group-apps Dock setting is left as is.
 
 set -uo pipefail
@@ -8,20 +8,20 @@ set -uo pipefail
 AEROSPACE_DIR="$HOME/.config/aerospace"
 BACKUP_SUFFIX=".pre-omarchy"
 
-echo "Stopping AeroSpace and borders..."
+echo "Stopping AeroSpace and AutoRaise..."
 osascript -e 'quit app "AeroSpace"' 2>/dev/null
 pkill -x AeroSpace 2>/dev/null
-pkill -x borders 2>/dev/null
+pkill -ix autoraise 2>/dev/null
 
 echo "Uninstalling packages..."
 brew uninstall --cask aerospace
-brew uninstall borders
+brew uninstall autoraise
 if brew untrust --help >/dev/null 2>&1; then
   brew untrust --cask nikitabobko/tap/aerospace
-  brew untrust --formula felixkratz/formulae/borders
+  brew untrust --formula dimentium/autoraise/autoraise
 fi
 brew untap nikitabobko/tap
-brew untap FelixKratz/formulae
+brew untap dimentium/autoraise
 
 echo "Removing config..."
 for file in aerospace.toml scratchpad.sh close.sh; do

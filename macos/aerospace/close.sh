@@ -17,3 +17,7 @@ if (( $($A list-windows --workspace focused --count) == 1 )); then
 else
   $A close
 fi
+
+# The closed window may leave a phantom tile behind; clear it once macOS has dropped the window.
+sleep 0.3
+~/.config/aerospace/cleanup.sh

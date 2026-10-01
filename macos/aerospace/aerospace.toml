@@ -11,7 +11,9 @@ config-version = 2
 # Launch AeroSpace (and AutoRaise, via after-startup-command) at login.
 start-at-login = true
 
-# Focus follows mouse (Hyprland follow_mouse): focus + raise the window under the pointer
+# Focus follows mouse (Hyprland follow_mouse): focus + raise the window under the pointer.
+# AeroSpace's built-in focus-follows-mouse (0.21) waits for the mouse to stop and
+# doesn't focus Ghostty, so use AutoRaise instead.
 after-startup-command = [
   "exec-and-forget /opt/homebrew/bin/autoraise -pollMillis 20 -delay 1 -requireMouseStop false",
 ]
@@ -22,6 +24,8 @@ default-root-container-layout = 'tiles'
 default-root-container-orientation = 'auto'
 automatically-unhide-macos-hidden-apps = true
 on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
+# Clear phantom (empty/white) tiles left by windows macOS already closed
+exec-on-workspace-change = ['/bin/bash', '-c', '~/.config/aerospace/cleanup.sh']
 
 
 key-mapping.preset = 'qwerty'

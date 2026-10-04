@@ -1,0 +1,18 @@
+# App shortcuts (modeled on Omarchy, Option = Super). Apply changes: skhd --restart-service
+
+# Close the focused window (presses its close button; Cmd+W still closes a tab)
+alt - w : osascript -e 'tell application "System Events" to tell (first application process whose frontmost is true) to click (first button of window 1 whose subrole is "AXCloseButton")'
+
+# Terminal
+alt - return : osascript -e 'tell application "Ghostty" to new window' -e 'tell application "Ghostty" to activate'
+
+# Browser (new window), incognito with ctrl
+alt + shift - return : osascript -e 'tell application "Google Chrome" to make new window' -e 'tell application "Google Chrome" to activate'
+alt + shift - b : osascript -e 'tell application "Google Chrome" to make new window' -e 'tell application "Google Chrome" to activate'
+alt + shift + ctrl - b : osascript -e 'tell application "Google Chrome" to make new window with properties {mode:"incognito"}' -e 'tell application "Google Chrome" to activate'
+
+# Apps
+alt + shift - f : open ~
+alt + shift - n : open -a "Visual Studio Code"
+alt + shift - j : open -a Joplin
+alt - m : open -a Muxflow
